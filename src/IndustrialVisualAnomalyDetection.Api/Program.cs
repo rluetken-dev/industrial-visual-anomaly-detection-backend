@@ -33,10 +33,20 @@ builder.Services.AddProblemDetails(options =>
 
 builder.Services.AddOptions<ImageUploadOptions>()
     .BindConfiguration(ImageUploadOptions.SectionName)
-    .Validate(options => options.MaxFileSizeBytes > 0, "The maximum image file size must be greater than zero.")
-    .Validate(options => options.MaxRequestBodySizeBytes >= options.MaxFileSizeBytes,
-        "The maximum request body size must be greater than or equal to the maximum image file size.")
-    .Validate(options => options.AllowedContentTypes.Length > 0, "At least one image content type must be allowed.")
+    .Validate(
+        options => options.MaxFileSizeBytes > 0,
+        "The maximum image file size must be greater than zero.")
+    .Validate(
+        options => options.MaxRequestBodySizeBytes > options.MaxFileSizeBytes,
+        "The maximum request body size must be greater than the maximum image file size.")
+    .Validate(
+        options => options.AllowedContentTypes is { Length: > 0 },
+        "At least one image content type must be allowed.")
+    .Validate(
+        options => options.AllowedContentTypes?.All(contentType =>
+            string.Equals(contentType, "image/png", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(contentType, "image/jpeg", StringComparison.OrdinalIgnoreCase)) == true,
+        "Only image/png and image/jpeg can be configured as allowed image content types.")
     .ValidateOnStart();
 
 builder.Services.AddScoped<IImageUploadValidator, ImageUploadValidator>();
@@ -73,10 +83,16 @@ builder.Services.AddOptions<PythonInferenceOptions>()
         return Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out Uri? baseUri)
             && (baseUri.Scheme == Uri.UriSchemeHttp || baseUri.Scheme == Uri.UriSchemeHttps);
     }, "The Python inference base URL must be an absolute HTTP or HTTPS URL.")
-    .Validate(options => Uri.TryCreate(options.PredictionPath, UriKind.Relative, out _),
-        "The Python inference prediction path must be relative.")
-    .Validate(options => Uri.TryCreate(options.HealthPath, UriKind.Relative, out _),
-        "The Python inference health path must be relative.")
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.PredictionPath)
+            && options.PredictionPath.StartsWith('/')
+            && Uri.TryCreate(options.PredictionPath, UriKind.Relative, out _),
+        "The Python inference prediction path must be a root-relative path.")
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.HealthPath)
+            && options.HealthPath.StartsWith('/')
+            && Uri.TryCreate(options.HealthPath, UriKind.Relative, out _),
+        "The Python inference health path must be a root-relative path.")
     .Validate(options => options.TimeoutSeconds > 0,
         "The Python inference timeout must be greater than zero.")
     .ValidateOnStart();
