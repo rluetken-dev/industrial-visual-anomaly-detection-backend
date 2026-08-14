@@ -3,7 +3,7 @@ using System.Net.Http.Json;
 using IndustrialVisualAnomalyDetection.Api.Contracts.Health;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace IndustrialVisualAnomalyDetection.Api.Tests;
+namespace IndustrialVisualAnomalyDetection.Api.Tests.Integration;
 
 public sealed class HealthEndpointsTests
     : IClassFixture<WebApplicationFactory<Program>>

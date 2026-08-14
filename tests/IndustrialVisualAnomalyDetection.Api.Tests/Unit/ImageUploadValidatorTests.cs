@@ -2,7 +2,7 @@ using IndustrialVisualAnomalyDetection.Api.Options;
 using IndustrialVisualAnomalyDetection.Api.Validation.Images;
 using Microsoft.AspNetCore.Http;
 
-namespace IndustrialVisualAnomalyDetection.Api.Tests;
+namespace IndustrialVisualAnomalyDetection.Api.Tests.Unit;
 
 public sealed class ImageUploadValidatorTests
 {

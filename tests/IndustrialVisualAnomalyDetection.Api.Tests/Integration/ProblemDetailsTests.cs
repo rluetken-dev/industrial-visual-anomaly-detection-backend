@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 
-namespace IndustrialVisualAnomalyDetection.Api.Tests;
+namespace IndustrialVisualAnomalyDetection.Api.Tests.Integration;
 
 public sealed class ProblemDetailsTests : IClassFixture<WebApplicationFactory<Program>>
 {

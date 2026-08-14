@@ -1,3 +1,6 @@
+using IndustrialVisualAnomalyDetection.Api.Application.Analysis;
+using IndustrialVisualAnomalyDetection.Api.Errors;
+using IndustrialVisualAnomalyDetection.Api.Infrastructure.Inference;
 using IndustrialVisualAnomalyDetection.Api.Options;
 using IndustrialVisualAnomalyDetection.Api.Validation.Images;
 
@@ -19,6 +22,8 @@ builder.Services.AddOptions<ImageUploadOptions>()
     .ValidateOnStart();
 
 builder.Services.AddScoped<IImageUploadValidator, ImageUploadValidator>();
+builder.Services.AddScoped<IAnomalyAnalyzer, UnavailableAnomalyAnalyzer>();
+builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 
 builder.Services.AddControllers();
 

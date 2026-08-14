@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace IndustrialVisualAnomalyDetection.Api.Tests;
+namespace IndustrialVisualAnomalyDetection.Api.Tests.Integration;
 
 public sealed class ImageUploadOptionsTests : IClassFixture<WebApplicationFactory<Program>>
 {
