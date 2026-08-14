@@ -23,6 +23,7 @@ public sealed class PythonInferenceOptionsTests : IClassFixture<WebApplicationFa
 
         Assert.Equal("http://localhost:8000", options.BaseUrl);
         Assert.Equal("/api/v1/predictions", options.PredictionPath);
+        Assert.Equal("/health/live", options.HealthPath);
         Assert.Equal(30, options.TimeoutSeconds);
     }
 }

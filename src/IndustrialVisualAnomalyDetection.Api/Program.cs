@@ -3,6 +3,7 @@ using IndustrialVisualAnomalyDetection.Api.Errors;
 using IndustrialVisualAnomalyDetection.Api.Infrastructure.Inference;
 using IndustrialVisualAnomalyDetection.Api.Options;
 using IndustrialVisualAnomalyDetection.Api.Validation.Images;
+using IndustrialVisualAnomalyDetection.Api.Application.Health;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -34,6 +35,17 @@ builder.Services.AddHttpClient<IAnomalyAnalyzer, PythonServiceAnomalyAnalyzer>(
         httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
     });
 
+builder.Services.AddHttpClient<IInferenceServiceHealthProbe, PythonInferenceServiceHealthProbe>(
+    (serviceProvider, httpClient) =>
+    {
+        PythonInferenceOptions options = serviceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<PythonInferenceOptions>>()
+            .Value;
+
+        httpClient.BaseAddress = new Uri(options.BaseUrl);
+        httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+    });
+
 builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 
 builder.Services.AddOptions<PythonInferenceOptions>()
@@ -45,6 +57,8 @@ builder.Services.AddOptions<PythonInferenceOptions>()
     }, "The Python inference base URL must be an absolute HTTP or HTTPS URL.")
     .Validate(options => Uri.TryCreate(options.PredictionPath, UriKind.Relative, out _),
         "The Python inference prediction path must be relative.")
+    .Validate(options => Uri.TryCreate(options.HealthPath, UriKind.Relative, out _),
+        "The Python inference health path must be relative.")
     .Validate(options => options.TimeoutSeconds > 0,
         "The Python inference timeout must be greater than zero.")
     .ValidateOnStart();

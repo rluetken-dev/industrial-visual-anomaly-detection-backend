@@ -1,4 +1,5 @@
-﻿using IndustrialVisualAnomalyDetection.Api.Contracts.Health;
+using IndustrialVisualAnomalyDetection.Api.Application.Health;
+using IndustrialVisualAnomalyDetection.Api.Contracts.Health;
 using Microsoft.AspNetCore.Mvc;
 
 namespace IndustrialVisualAnomalyDetection.Api.Controllers;
@@ -7,6 +8,13 @@ namespace IndustrialVisualAnomalyDetection.Api.Controllers;
 [Route("health")]
 public sealed class HealthController : ControllerBase
 {
+    private readonly IInferenceServiceHealthProbe _inferenceServiceHealthProbe;
+
+    public HealthController(IInferenceServiceHealthProbe inferenceServiceHealthProbe)
+    {
+        _inferenceServiceHealthProbe = inferenceServiceHealthProbe;
+    }
+
     [HttpGet("live")]
     [ProducesResponseType<HealthResponse>(StatusCodes.Status200OK)]
     public ActionResult<HealthResponse> GetLiveness()
@@ -16,8 +24,18 @@ public sealed class HealthController : ControllerBase
 
     [HttpGet("ready")]
     [ProducesResponseType<HealthResponse>(StatusCodes.Status200OK)]
-    public ActionResult<HealthResponse> GetReadiness()
+    [ProducesResponseType<HealthResponse>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<HealthResponse>> GetReadiness(CancellationToken cancellationToken)
     {
+        bool isReady = await _inferenceServiceHealthProbe.IsReadyAsync(cancellationToken);
+
+        if (!isReady)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new HealthResponse("not_ready"));
+        }
+
         return Ok(new HealthResponse("ready"));
     }
 }
