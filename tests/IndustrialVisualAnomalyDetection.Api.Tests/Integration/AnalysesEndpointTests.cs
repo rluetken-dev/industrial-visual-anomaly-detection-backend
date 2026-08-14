@@ -14,6 +14,11 @@ namespace IndustrialVisualAnomalyDetection.Api.Tests.Integration;
 
 public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<Program>>
 {
+    private static readonly byte[] ValidPngContent =
+    [
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
+    ];
+
     private readonly WebApplicationFactory<Program> _factory;
 
     public AnalysesEndpointTests(WebApplicationFactory<Program> factory)
@@ -96,7 +101,7 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
         });
 
         using HttpClient client = CreateClient(factory);
-        using MultipartFormDataContent content = CreateUpload([1], "image/png");
+        using MultipartFormDataContent content = CreateUpload(ValidPngContent, "image/png");
 
         using HttpResponseMessage response = await client.PostAsync("/api/v1/analyses", content);
 
@@ -130,7 +135,7 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
         });
 
         using HttpClient client = CreateClient(factory);
-        using MultipartFormDataContent content = CreateUpload([1], "image/png");
+        using MultipartFormDataContent content = CreateUpload(ValidPngContent, "image/png");
 
         using HttpResponseMessage response = await client.PostAsync("/api/v1/analyses", content);
 

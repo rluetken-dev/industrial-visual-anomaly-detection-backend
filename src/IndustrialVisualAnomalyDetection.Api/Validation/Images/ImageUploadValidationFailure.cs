@@ -6,5 +6,6 @@ public enum ImageUploadValidationFailure
     MissingFile,
     EmptyFile,
     FileTooLarge,
-    UnsupportedContentType
+    UnsupportedContentType,
+    InvalidFileSignature
 }

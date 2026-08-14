@@ -63,6 +63,13 @@ public sealed class AnalysesController : ControllerBase
                     "Unsupported image type",
                     "The uploaded file does not use a supported image content type.",
                     "unsupported-image-type");
+
+            case ImageUploadValidationFailure.InvalidFileSignature:
+                return CreateValidationProblem(
+                    StatusCodes.Status400BadRequest,
+                    "Invalid image",
+                    "The uploaded file content does not match its declared image type.",
+                    "invalid-image");
         }
 
         Stopwatch stopwatch = Stopwatch.StartNew();
