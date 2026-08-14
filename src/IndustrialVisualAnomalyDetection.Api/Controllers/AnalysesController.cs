@@ -76,8 +76,11 @@ public sealed class AnalysesController : ControllerBase
 
         using Stream imageStream = image!.OpenReadStream();
         AnomalyAnalysisResult result = await _anomalyAnalyzer.AnalyzeAsync(
-            new ImageAnalysisInput(imageStream, image.ContentType),
-            cancellationToken);
+             new ImageAnalysisInput(
+                 imageStream,
+                 image.ContentType,
+                 HttpContext.TraceIdentifier),
+             cancellationToken);
 
         stopwatch.Stop();
 

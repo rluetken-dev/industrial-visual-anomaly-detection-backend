@@ -15,6 +15,8 @@ public sealed class PythonServiceAnomalyAnalyzerTests
         {
             Assert.Equal(HttpMethod.Post, request.Method); 
             Assert.Equal("http://localhost:8000/api/v1/predictions", request.RequestUri?.AbsoluteUri);
+            Assert.True(request.Headers.TryGetValues("X-Correlation-ID", out IEnumerable<string>? traceIds));
+            Assert.Equal("trace-123", Assert.Single(traceIds));
 
             MultipartFormDataContent multipart =
                 Assert.IsType<MultipartFormDataContent>(request.Content);
@@ -46,7 +48,7 @@ public sealed class PythonServiceAnomalyAnalyzerTests
         using MemoryStream imageStream = new([1, 2, 3]);
 
         AnomalyAnalysisResult result = await analyzer.AnalyzeAsync(
-            new ImageAnalysisInput(imageStream, "image/png"),
+            new ImageAnalysisInput(imageStream, "image/png", "trace-123"),
             CancellationToken.None);
 
         Assert.Equal("mvtec-ad-capsule-320", result.ModelId);

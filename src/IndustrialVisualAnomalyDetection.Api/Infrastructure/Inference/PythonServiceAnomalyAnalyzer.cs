@@ -32,9 +32,22 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
 
         try
         {
-            using HttpResponseMessage response = await _httpClient.PostAsync(
-                _options.PredictionPath,
-                form,
+            using HttpRequestMessage request = new(
+                HttpMethod.Post,
+                _options.PredictionPath)
+            {
+                Content = form
+            };
+
+            if (!string.IsNullOrWhiteSpace(input.TraceId))
+            {
+                request.Headers.TryAddWithoutValidation(
+                    "X-Correlation-ID",
+                    input.TraceId);
+            }
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
                 cancellationToken);
 
             if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
