@@ -7,10 +7,17 @@ namespace IndustrialVisualAnomalyDetection.Api.Errors;
 public sealed class InferenceUnavailableExceptionHandler : IExceptionHandler
 {
     private readonly IProblemDetailsService _problemDetailsService;
+    private readonly ILogger<InferenceUnavailableExceptionHandler> _logger;
 
-    public InferenceUnavailableExceptionHandler(IProblemDetailsService problemDetailsService)
+    public InferenceUnavailableExceptionHandler(
+        IProblemDetailsService problemDetailsService,
+        ILogger<InferenceUnavailableExceptionHandler> logger)
     {
+        ArgumentNullException.ThrowIfNull(problemDetailsService);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _problemDetailsService = problemDetailsService;
+        _logger = logger;
     }
 
     public async ValueTask<bool> TryHandleAsync(
@@ -22,6 +29,11 @@ public sealed class InferenceUnavailableExceptionHandler : IExceptionHandler
         {
             return false;
         }
+
+        _logger.LogWarning(
+            exception,
+            "Anomaly inference is unavailable for request {TraceId}.",
+            httpContext.TraceIdentifier);
 
         httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
 

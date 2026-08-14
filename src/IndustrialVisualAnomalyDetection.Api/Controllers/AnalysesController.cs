@@ -12,13 +12,20 @@ public sealed class AnalysesController : ControllerBase
 {
     private readonly IImageUploadValidator _imageUploadValidator;
     private readonly IAnomalyAnalyzer _anomalyAnalyzer;
+    private readonly ILogger<AnalysesController> _logger;
 
     public AnalysesController(
         IImageUploadValidator imageUploadValidator,
-        IAnomalyAnalyzer anomalyAnalyzer)
+        IAnomalyAnalyzer anomalyAnalyzer,
+        ILogger<AnalysesController> logger)
     {
+        ArgumentNullException.ThrowIfNull(imageUploadValidator);
+        ArgumentNullException.ThrowIfNull(anomalyAnalyzer);
+        ArgumentNullException.ThrowIfNull(logger);
+
         _imageUploadValidator = imageUploadValidator;
         _anomalyAnalyzer = anomalyAnalyzer;
+        _logger = logger;
     }
 
     [HttpPost]
@@ -33,6 +40,14 @@ public sealed class AnalysesController : ControllerBase
         CancellationToken cancellationToken)
     {
         ImageUploadValidationFailure validationFailure = _imageUploadValidator.Validate(image);
+
+        if (validationFailure != ImageUploadValidationFailure.None)
+        {
+            _logger.LogWarning(
+                "Rejected image upload {TraceId} with validation failure {ValidationFailure}.",
+                HttpContext.TraceIdentifier,
+                validationFailure);
+        }
 
         switch (validationFailure)
         {
@@ -72,6 +87,12 @@ public sealed class AnalysesController : ControllerBase
                     "invalid-image");
         }
 
+        _logger.LogInformation(
+            "Starting anomaly analysis {TraceId} for an image with content type {ContentType} and size {FileSizeBytes}.",
+            HttpContext.TraceIdentifier,
+            image!.ContentType,
+            image.Length);
+
         Stopwatch stopwatch = Stopwatch.StartNew();
 
         using Stream imageStream = image!.OpenReadStream();
@@ -83,6 +104,14 @@ public sealed class AnalysesController : ControllerBase
              cancellationToken);
 
         stopwatch.Stop();
+
+        _logger.LogInformation(
+            "Completed anomaly analysis {TraceId} with model {ModelId}, category {Category}, decision {Decision}, and duration {ProcessingTimeMs} ms.",
+            HttpContext.TraceIdentifier,
+            result.ModelId,
+            result.Category,
+            result.IsAnomalous ? "anomalous" : "normal",
+            stopwatch.ElapsedMilliseconds);
 
         AnalysisResponse response = new(
             new AnalysisModelResponse(result.ModelId, result.Category),
