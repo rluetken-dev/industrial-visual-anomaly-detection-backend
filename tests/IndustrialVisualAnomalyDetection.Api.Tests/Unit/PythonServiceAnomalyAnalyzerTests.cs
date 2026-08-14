@@ -93,6 +93,29 @@ public sealed class PythonServiceAnomalyAnalyzerTests
                 CancellationToken.None));
     }
 
+    [Fact]
+    public async Task RejectedImageIsMappedToInvalidImageContentException()
+    {
+        StubHttpMessageHandler handler = new((_, _) =>
+        {
+            HttpResponseMessage response = new(HttpStatusCode.BadRequest);
+            return Task.FromResult(response);
+        });
+
+        PythonServiceAnomalyAnalyzer analyzer = CreateAnalyzer(handler);
+        using MemoryStream imageStream = new([1]);
+
+        InvalidImageContentException exception =
+            await Assert.ThrowsAsync<InvalidImageContentException>(() =>
+                analyzer.AnalyzeAsync(
+                    new ImageAnalysisInput(imageStream, "image/png"),
+                    CancellationToken.None));
+
+        Assert.Equal(
+            "The Python inference service rejected the uploaded image.",
+            exception.Message);
+    }
+
     [Theory]
     [InlineData("", "capsule", 1.0, 0.5, true)]
     [InlineData("model", "", 1.0, 0.5, true)]

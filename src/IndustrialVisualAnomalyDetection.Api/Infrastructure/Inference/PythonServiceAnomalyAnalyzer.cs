@@ -37,6 +37,12 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
                 form,
                 cancellationToken);
 
+            if (response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+            {
+                throw new InvalidImageContentException(
+                    "The Python inference service rejected the uploaded image.");
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 throw new InferenceUnavailableException(

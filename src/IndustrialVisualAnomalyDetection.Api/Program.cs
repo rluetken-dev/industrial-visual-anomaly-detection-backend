@@ -46,6 +46,8 @@ builder.Services.AddHttpClient<IInferenceServiceHealthProbe, PythonInferenceServ
         httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
     });
 
+builder.Services.AddExceptionHandler<InvalidImageContentExceptionHandler>();
+builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 
 builder.Services.AddOptions<PythonInferenceOptions>()

@@ -116,6 +116,34 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
     }
 
     [Fact]
+    public async Task UnreadableImageReturnsBadRequest()
+    {
+        using WebApplicationFactory<Program> factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IAnomalyAnalyzer>();
+                services.AddSingleton<IAnomalyAnalyzer>(new InvalidImageAnomalyAnalyzer());
+            });
+        });
+
+        using HttpClient client = CreateClient(factory);
+        using MultipartFormDataContent content = CreateUpload(ValidPngContent, "image/png");
+
+        using HttpResponseMessage response = await client.PostAsync("/api/v1/analyses", content);
+
+        ProblemDetails problem = await ReadProblemDetails(
+            response,
+            HttpStatusCode.BadRequest);
+
+        Assert.Equal("Invalid image", problem.Title);
+        Assert.Equal("The uploaded file is not a readable image.", problem.Detail);
+        Assert.Equal(
+            "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/invalid-image",
+            problem.Type);
+    }
+
+    [Fact]
     public async Task SuccessfulAnalysisReturnsMappedResponse()
     {
         AnomalyAnalysisResult analysisResult = new(
@@ -199,6 +227,18 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
             CancellationToken cancellationToken)
         {
             return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class InvalidImageAnomalyAnalyzer : IAnomalyAnalyzer
+    {
+        public Task<AnomalyAnalysisResult> AnalyzeAsync(
+            ImageAnalysisInput input,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromException<AnomalyAnalysisResult>(
+                new InvalidImageContentException(
+                    "The Python inference service rejected the uploaded image."));
         }
     }
 }
