@@ -4,8 +4,23 @@ using IndustrialVisualAnomalyDetection.Api.Infrastructure.Inference;
 using IndustrialVisualAnomalyDetection.Api.Options;
 using IndustrialVisualAnomalyDetection.Api.Validation.Images;
 using IndustrialVisualAnomalyDetection.Api.Application.Health;
+using Microsoft.AspNetCore.Http.Features;
 
 var builder = WebApplication.CreateBuilder(args);
+
+long maxRequestBodySizeBytes = builder.Configuration.GetValue<long?>(
+    $"{ImageUploadOptions.SectionName}:{nameof(ImageUploadOptions.MaxRequestBodySizeBytes)}")
+    ?? ImageUploadOptions.DefaultMaxRequestBodySizeBytes;
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = maxRequestBodySizeBytes;
+});
+
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = maxRequestBodySizeBytes;
+});
 
 // Add services to the container.
 builder.Services.AddProblemDetails(options =>
@@ -19,6 +34,8 @@ builder.Services.AddProblemDetails(options =>
 builder.Services.AddOptions<ImageUploadOptions>()
     .BindConfiguration(ImageUploadOptions.SectionName)
     .Validate(options => options.MaxFileSizeBytes > 0, "The maximum image file size must be greater than zero.")
+    .Validate(options => options.MaxRequestBodySizeBytes >= options.MaxFileSizeBytes,
+        "The maximum request body size must be greater than or equal to the maximum image file size.")
     .Validate(options => options.AllowedContentTypes.Length > 0, "At least one image content type must be allowed.")
     .ValidateOnStart();
 
@@ -47,7 +64,6 @@ builder.Services.AddHttpClient<IInferenceServiceHealthProbe, PythonInferenceServ
     });
 
 builder.Services.AddExceptionHandler<InvalidImageContentExceptionHandler>();
-builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 
 builder.Services.AddOptions<PythonInferenceOptions>()
