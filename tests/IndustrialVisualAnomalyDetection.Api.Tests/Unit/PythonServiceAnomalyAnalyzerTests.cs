@@ -118,6 +118,38 @@ public sealed class PythonServiceAnomalyAnalyzerTests
             exception.Message);
     }
 
+    [Fact]
+    public void NullHttpClientIsRejected()
+    {
+        PythonInferenceOptions options = new();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new PythonServiceAnomalyAnalyzer(
+                null!,
+                Microsoft.Extensions.Options.Options.Create(options)));
+    }
+
+    [Fact]
+    public void NullOptionsAreRejected()
+    {
+        using HttpClient httpClient = new();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new PythonServiceAnomalyAnalyzer(httpClient, null!));
+    }
+
+    [Fact]
+    public async Task NullAnalysisInputIsRejected()
+    {
+        StubHttpMessageHandler handler = new((_, _) =>
+            Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+
+        PythonServiceAnomalyAnalyzer analyzer = CreateAnalyzer(handler);
+
+        await Assert.ThrowsAsync<ArgumentNullException>(() =>
+            analyzer.AnalyzeAsync(null!, CancellationToken.None));
+    }
+
     [Theory]
     [InlineData("", "capsule", 1.0, 0.5, true)]
     [InlineData("model", "", 1.0, 0.5, true)]

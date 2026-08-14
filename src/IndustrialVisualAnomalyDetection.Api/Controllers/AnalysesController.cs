@@ -103,6 +103,7 @@ public sealed class AnalysesController : ControllerBase
         Stopwatch stopwatch = Stopwatch.StartNew();
 
         using Stream imageStream = image!.OpenReadStream();
+
         AnomalyAnalysisResult result = await _anomalyAnalyzer.AnalyzeAsync(
              new ImageAnalysisInput(
                  imageStream,

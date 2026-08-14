@@ -103,6 +103,12 @@ public sealed class ImageUploadValidatorTests
         Assert.Equal(ImageUploadValidationFailure.InvalidFileSignature, result);
     }
 
+    [Fact]
+    public void NullOptionsAreRejected()
+    {
+        Assert.Throws<ArgumentNullException>(() => new ImageUploadValidator(null!));
+    }
+
     private static ImageUploadValidator CreateValidator(long maxFileSizeBytes = 10)
     {
         ImageUploadOptions options = new()

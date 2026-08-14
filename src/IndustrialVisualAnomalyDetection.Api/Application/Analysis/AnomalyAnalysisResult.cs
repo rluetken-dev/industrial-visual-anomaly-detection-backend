@@ -1,8 +1,48 @@
 namespace IndustrialVisualAnomalyDetection.Api.Application.Analysis;
 
-public sealed record AnomalyAnalysisResult(
-    string ModelId,
-    string Category,
-    double Score,
-    double Threshold,
-    bool IsAnomalous);
+public sealed record AnomalyAnalysisResult
+{
+    public AnomalyAnalysisResult(
+        string modelId,
+        string category,
+        double score,
+        double threshold,
+        bool isAnomalous)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(category);
+
+        if (!double.IsFinite(score) || score < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(score),
+                "The anomaly score must be a finite, non-negative value.");
+        }
+
+        if (!double.IsFinite(threshold) || threshold < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(threshold),
+                "The decision threshold must be a finite, non-negative value.");
+        }
+
+        if (isAnomalous != (score > threshold))
+        {
+            throw new ArgumentException(
+                "The anomaly decision must match the score and threshold.",
+                nameof(isAnomalous));
+        }
+
+        ModelId = modelId;
+        Category = category;
+        Score = score;
+        Threshold = threshold;
+        IsAnomalous = isAnomalous;
+    }
+
+    public string ModelId { get; }
+    public string Category { get; }
+    public double Score { get; }
+    public double Threshold { get; }
+    public bool IsAnomalous { get; }
+}

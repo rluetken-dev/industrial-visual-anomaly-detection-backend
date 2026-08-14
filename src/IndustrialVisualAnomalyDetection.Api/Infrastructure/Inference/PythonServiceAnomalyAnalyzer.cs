@@ -16,6 +16,10 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
         HttpClient httpClient,
         IOptions<PythonInferenceOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value);
+
         _httpClient = httpClient;
         _options = options.Value;
     }
@@ -24,6 +28,8 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
         ImageAnalysisInput input,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(input);
+
         using StreamContent imageContent = new(input.Content);
         imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse(input.ContentType);
 

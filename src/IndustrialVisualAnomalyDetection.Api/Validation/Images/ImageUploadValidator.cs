@@ -12,6 +12,9 @@ public sealed class ImageUploadValidator : IImageUploadValidator
 
     public ImageUploadValidator(IOptions<ImageUploadOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value);
+
         _options = options.Value;
     }
 

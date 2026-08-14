@@ -50,6 +50,26 @@ public sealed class PythonInferenceServiceHealthProbeTests
         Assert.False(result);
     }
 
+    [Fact]
+    public void Null_http_client_is_rejected()
+    {
+        PythonInferenceOptions options = new();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new PythonInferenceServiceHealthProbe(
+                null!,
+                Microsoft.Extensions.Options.Options.Create(options)));
+    }
+
+    [Fact]
+    public void Null_options_are_rejected()
+    {
+        using HttpClient httpClient = new();
+
+        Assert.Throws<ArgumentNullException>(() =>
+            new PythonInferenceServiceHealthProbe(httpClient, null!));
+    }
+
     private static PythonInferenceServiceHealthProbe CreateProbe(
         Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
     {

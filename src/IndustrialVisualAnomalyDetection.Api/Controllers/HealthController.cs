@@ -12,6 +12,8 @@ public sealed class HealthController : ControllerBase
 
     public HealthController(IInferenceServiceHealthProbe inferenceServiceHealthProbe)
     {
+        ArgumentNullException.ThrowIfNull(inferenceServiceHealthProbe);
+
         _inferenceServiceHealthProbe = inferenceServiceHealthProbe;
     }
 

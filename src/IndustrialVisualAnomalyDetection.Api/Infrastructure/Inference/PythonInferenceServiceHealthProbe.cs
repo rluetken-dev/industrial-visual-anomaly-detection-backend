@@ -13,6 +13,10 @@ public sealed class PythonInferenceServiceHealthProbe : IInferenceServiceHealthP
         HttpClient httpClient,
         IOptions<PythonInferenceOptions> options)
     {
+        ArgumentNullException.ThrowIfNull(httpClient);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(options.Value);
+
         _httpClient = httpClient;
         _options = options.Value;
     }
