@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/IndustrialVisualAnomalyDetection.Api/IndustrialVisualAnomalyDetection.Api.csproj" />
+  </Folder>
+  <Project Path="tests/IndustrialVisualAnomalyDetection.Api.Tests/IndustrialVisualAnomalyDetection.Api.Tests.csproj" Id="787ae9e4-24bd-4f5e-a8e9-f852f14dba4e" />
+</Solution>

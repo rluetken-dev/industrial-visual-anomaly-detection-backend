@@ -1,0 +1,6 @@
+@IndustrialVisualAnomalyDetection.Api_HostAddress = http://localhost:5070
+
+GET {{IndustrialVisualAnomalyDetection.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

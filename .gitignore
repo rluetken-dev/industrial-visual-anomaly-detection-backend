@@ -1,0 +1,41 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+artifacts/
+
+# Test and tooling output
+TestResults/
+coverage/
+coverage.*
+*.trx
+# Local application configuration
+appsettings.Local.json
+.env
+.env.*
+!.env.example
+
+# Uploaded and generated image data
+uploads/
+outputs/
+*.log
+
+# Local model and inference artifacts
+runtime-artifacts/
+*.onnx
+*.onnx.data
+*.pt
+*.pth
+
+# Local test and coverage output
+TestResults/
+coverage/
+coverage.*
