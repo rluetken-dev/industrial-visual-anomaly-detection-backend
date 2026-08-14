@@ -1,10 +1,11 @@
 using IndustrialVisualAnomalyDetection.Api.Application.Analysis;
+using IndustrialVisualAnomalyDetection.Api.Application.Health;
 using IndustrialVisualAnomalyDetection.Api.Errors;
 using IndustrialVisualAnomalyDetection.Api.Infrastructure.Inference;
 using IndustrialVisualAnomalyDetection.Api.Options;
 using IndustrialVisualAnomalyDetection.Api.Validation.Images;
-using IndustrialVisualAnomalyDetection.Api.Application.Health;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,12 +23,12 @@ builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = maxRequestBodySizeBytes;
 });
 
-// Add services to the container.
 builder.Services.AddProblemDetails(options =>
 {
     options.CustomizeProblemDetails = context =>
     {
-        context.ProblemDetails.Extensions["traceId"] = context.HttpContext.TraceIdentifier;
+        context.ProblemDetails.Extensions["traceId"] =
+            context.HttpContext.TraceIdentifier;
     };
 });
 
@@ -44,10 +45,89 @@ builder.Services.AddOptions<ImageUploadOptions>()
         "At least one image content type must be allowed.")
     .Validate(
         options => options.AllowedContentTypes?.All(contentType =>
-            string.Equals(contentType, "image/png", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(contentType, "image/jpeg", StringComparison.OrdinalIgnoreCase)) == true,
+            string.Equals(
+                contentType,
+                "image/png",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                contentType,
+                "image/jpeg",
+                StringComparison.OrdinalIgnoreCase)) == true,
         "Only image/png and image/jpeg can be configured as allowed image content types.")
     .ValidateOnStart();
+
+builder.Services.AddOptions<PythonInferenceOptions>()
+    .BindConfiguration(PythonInferenceOptions.SectionName)
+    .Validate(
+        options =>
+            Uri.TryCreate(
+                options.BaseUrl,
+                UriKind.Absolute,
+                out Uri? baseUri)
+            && (baseUri.Scheme == Uri.UriSchemeHttp
+                || baseUri.Scheme == Uri.UriSchemeHttps),
+        "The Python inference base URL must be an absolute HTTP or HTTPS URL.")
+    .Validate(
+        options =>
+            !string.IsNullOrWhiteSpace(options.PredictionPath)
+            && options.PredictionPath.StartsWith('/')
+            && Uri.TryCreate(
+                options.PredictionPath,
+                UriKind.Relative,
+                out _),
+        "The Python inference prediction path must be a root-relative path.")
+    .Validate(
+        options =>
+            !string.IsNullOrWhiteSpace(options.HealthPath)
+            && options.HealthPath.StartsWith('/')
+            && Uri.TryCreate(
+                options.HealthPath,
+                UriKind.Relative,
+                out _),
+        "The Python inference health path must be a root-relative path.")
+    .Validate(
+        options => options.TimeoutSeconds > 0,
+        "The Python inference timeout must be greater than zero.")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<ApiCorsOptions>()
+    .BindConfiguration(ApiCorsOptions.SectionName)
+    .Validate(
+        options => options.AllowedOrigins is not null,
+        "The CORS allowed origins collection must not be null.")
+    .Validate(
+        options => options.AllowedOrigins?.All(origin =>
+            Uri.TryCreate(
+                origin,
+                UriKind.Absolute,
+                out Uri? uri)
+            && (uri.Scheme == Uri.UriSchemeHttp
+                || uri.Scheme == Uri.UriSchemeHttps)
+            && uri.AbsolutePath == "/"
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment)) == true,
+        "Every CORS origin must be an absolute HTTP or HTTPS origin without a path, query, or fragment.")
+    .ValidateOnStart();
+
+builder.Services.AddCors();
+
+builder.Services
+    .AddOptions<Microsoft.AspNetCore.Cors.Infrastructure.CorsOptions>()
+    .Configure<IOptions<ApiCorsOptions>>((corsOptions, configuredOptions) =>
+    {
+        string[] allowedOrigins = configuredOptions.Value.AllowedOrigins;
+
+        corsOptions.AddPolicy(ApiCorsOptions.PolicyName, policy =>
+        {
+            if (allowedOrigins.Length > 0)
+            {
+                policy
+                    .WithOrigins(allowedOrigins)
+                    .AllowAnyHeader()
+                    .AllowAnyMethod();
+            }
+        });
+    });
 
 builder.Services.AddScoped<IImageUploadValidator, ImageUploadValidator>();
 
@@ -55,18 +135,20 @@ builder.Services.AddHttpClient<IAnomalyAnalyzer, PythonServiceAnomalyAnalyzer>(
     (serviceProvider, httpClient) =>
     {
         PythonInferenceOptions options = serviceProvider
-            .GetRequiredService<Microsoft.Extensions.Options.IOptions<PythonInferenceOptions>>()
+            .GetRequiredService<IOptions<PythonInferenceOptions>>()
             .Value;
 
         httpClient.BaseAddress = new Uri(options.BaseUrl);
         httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
     });
 
-builder.Services.AddHttpClient<IInferenceServiceHealthProbe, PythonInferenceServiceHealthProbe>(
+builder.Services.AddHttpClient<
+    IInferenceServiceHealthProbe,
+    PythonInferenceServiceHealthProbe>(
     (serviceProvider, httpClient) =>
     {
         PythonInferenceOptions options = serviceProvider
-            .GetRequiredService<Microsoft.Extensions.Options.IOptions<PythonInferenceOptions>>()
+            .GetRequiredService<IOptions<PythonInferenceOptions>>()
             .Value;
 
         httpClient.BaseAddress = new Uri(options.BaseUrl);
@@ -76,35 +158,11 @@ builder.Services.AddHttpClient<IInferenceServiceHealthProbe, PythonInferenceServ
 builder.Services.AddExceptionHandler<InvalidImageContentExceptionHandler>();
 builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
 
-builder.Services.AddOptions<PythonInferenceOptions>()
-    .BindConfiguration(PythonInferenceOptions.SectionName)
-    .Validate(options =>
-    {
-        return Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out Uri? baseUri)
-            && (baseUri.Scheme == Uri.UriSchemeHttp || baseUri.Scheme == Uri.UriSchemeHttps);
-    }, "The Python inference base URL must be an absolute HTTP or HTTPS URL.")
-    .Validate(
-        options => !string.IsNullOrWhiteSpace(options.PredictionPath)
-            && options.PredictionPath.StartsWith('/')
-            && Uri.TryCreate(options.PredictionPath, UriKind.Relative, out _),
-        "The Python inference prediction path must be a root-relative path.")
-    .Validate(
-        options => !string.IsNullOrWhiteSpace(options.HealthPath)
-            && options.HealthPath.StartsWith('/')
-            && Uri.TryCreate(options.HealthPath, UriKind.Relative, out _),
-        "The Python inference health path must be a root-relative path.")
-    .Validate(options => options.TimeoutSeconds > 0,
-        "The Python inference timeout must be greater than zero.")
-    .ValidateOnStart();
-
 builder.Services.AddControllers();
-
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -112,9 +170,8 @@ if (app.Environment.IsDevelopment())
 
 app.UseExceptionHandler();
 app.UseStatusCodePages();
-
 app.UseHttpsRedirection();
-
+app.UseCors(ApiCorsOptions.PolicyName);
 app.UseAuthorization();
 
 app.MapControllers();
