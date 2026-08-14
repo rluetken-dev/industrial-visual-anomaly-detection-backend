@@ -29,6 +29,10 @@ public sealed class AnalysesController : ControllerBase
     }
 
     [HttpPost]
+    [EndpointName("AnalyzeImage")]
+    [EndpointSummary("Analyze an industrial image")]
+    [EndpointDescription(
+        "Validates one uploaded PNG or JPEG image and returns its anomaly score, decision threshold, classification decision, model information, processing time, and trace identifier.")]
     [Consumes("multipart/form-data")]
     [ProducesResponseType<AnalysisResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
@@ -36,9 +40,12 @@ public sealed class AnalysesController : ControllerBase
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status415UnsupportedMediaType)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<AnalysisResponse>> Analyze(
-        [FromForm] IFormFile? image,
+        [FromForm] AnalysisRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
+
+        IFormFile? image = request.Image;
         ImageUploadValidationFailure validationFailure = _imageUploadValidator.Validate(image);
 
         if (validationFailure != ImageUploadValidationFailure.None)
