@@ -4,6 +4,11 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using IndustrialVisualAnomalyDetection.Api.Application.Analysis;
+using IndustrialVisualAnomalyDetection.Api.Contracts.Analyses;
+using IndustrialVisualAnomalyDetection.Api.Infrastructure.Inference;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace IndustrialVisualAnomalyDetection.Api.Tests.Integration;
 
@@ -81,7 +86,16 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
     [Fact]
     public async Task ValidUploadReturnsServiceUnavailableWithoutInferenceAdapter()
     {
-        using HttpClient client = CreateClient(_factory);
+        using WebApplicationFactory<Program> factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IAnomalyAnalyzer>();
+                services.AddScoped<IAnomalyAnalyzer, UnavailableAnomalyAnalyzer>();
+            });
+        });
+
+        using HttpClient client = CreateClient(factory);
         using MultipartFormDataContent content = CreateUpload([1], "image/png");
 
         using HttpResponseMessage response = await client.PostAsync("/api/v1/analyses", content);
@@ -94,6 +108,44 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.Equal(
             "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/inference-unavailable",
             problem.Type);
+    }
+
+    [Fact]
+    public async Task SuccessfulAnalysisReturnsMappedResponse()
+    {
+        AnomalyAnalysisResult analysisResult = new(
+            "mvtec-ad-capsule-320",
+            "capsule",
+            4.992109,
+            2.501822,
+            true);
+
+        using WebApplicationFactory<Program> factory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IAnomalyAnalyzer>();
+                services.AddSingleton<IAnomalyAnalyzer>(new StubAnomalyAnalyzer(analysisResult));
+            });
+        });
+
+        using HttpClient client = CreateClient(factory);
+        using MultipartFormDataContent content = CreateUpload([1], "image/png");
+
+        using HttpResponseMessage response = await client.PostAsync("/api/v1/analyses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        AnalysisResponse? result = await response.Content.ReadFromJsonAsync<AnalysisResponse>();
+
+        Assert.NotNull(result);
+        Assert.Equal("mvtec-ad-capsule-320", result.Model.Id);
+        Assert.Equal("capsule", result.Model.Category);
+        Assert.Equal(4.992109, result.Score);
+        Assert.Equal(2.501822, result.Threshold);
+        Assert.Equal("anomalous", result.Decision);
+        Assert.True(result.ProcessingTimeMs >= 0);
+        Assert.False(string.IsNullOrWhiteSpace(result.TraceId));
     }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
@@ -126,5 +178,22 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.True(problem.Extensions.ContainsKey("traceId"));
 
         return problem;
+    }
+
+    private sealed class StubAnomalyAnalyzer : IAnomalyAnalyzer
+    {
+        private readonly AnomalyAnalysisResult _result;
+
+        public StubAnomalyAnalyzer(AnomalyAnalysisResult result)
+        {
+            _result = result;
+        }
+
+        public Task<AnomalyAnalysisResult> AnalyzeAsync(
+            ImageAnalysisInput input,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_result);
+        }
     }
 }

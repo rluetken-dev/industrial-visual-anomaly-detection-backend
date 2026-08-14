@@ -22,8 +22,32 @@ builder.Services.AddOptions<ImageUploadOptions>()
     .ValidateOnStart();
 
 builder.Services.AddScoped<IImageUploadValidator, ImageUploadValidator>();
-builder.Services.AddScoped<IAnomalyAnalyzer, UnavailableAnomalyAnalyzer>();
+
+builder.Services.AddHttpClient<IAnomalyAnalyzer, PythonServiceAnomalyAnalyzer>(
+    (serviceProvider, httpClient) =>
+    {
+        PythonInferenceOptions options = serviceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<PythonInferenceOptions>>()
+            .Value;
+
+        httpClient.BaseAddress = new Uri(options.BaseUrl);
+        httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+    });
+
 builder.Services.AddExceptionHandler<InferenceUnavailableExceptionHandler>();
+
+builder.Services.AddOptions<PythonInferenceOptions>()
+    .BindConfiguration(PythonInferenceOptions.SectionName)
+    .Validate(options =>
+    {
+        return Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out Uri? baseUri)
+            && (baseUri.Scheme == Uri.UriSchemeHttp || baseUri.Scheme == Uri.UriSchemeHttps);
+    }, "The Python inference base URL must be an absolute HTTP or HTTPS URL.")
+    .Validate(options => Uri.TryCreate(options.PredictionPath, UriKind.Relative, out _),
+        "The Python inference prediction path must be relative.")
+    .Validate(options => options.TimeoutSeconds > 0,
+        "The Python inference timeout must be greater than zero.")
+    .ValidateOnStart();
 
 builder.Services.AddControllers();
 
