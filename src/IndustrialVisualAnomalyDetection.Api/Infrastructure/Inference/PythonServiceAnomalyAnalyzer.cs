@@ -53,6 +53,12 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
                     "The Python inference service returned an empty response.");
             }
 
+            if (!IsValid(inferenceResponse))
+            {
+                throw new InferenceUnavailableException(
+                    "The Python inference service returned an invalid response.");
+            }
+
             return new AnomalyAnalysisResult(
                 inferenceResponse.ModelId,
                 inferenceResponse.Category,
@@ -79,5 +85,26 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
                 "The Python inference request timed out.",
                 exception);
         }
+    }
+
+    private static bool IsValid(PythonInferenceResponse response)
+    {
+        if (string.IsNullOrWhiteSpace(response.ModelId)
+            || string.IsNullOrWhiteSpace(response.Category))
+        {
+            return false;
+        }
+
+        if (!double.IsFinite(response.Score)
+            || !double.IsFinite(response.Threshold)
+            || response.Score < 0
+            || response.Threshold < 0)
+        {
+            return false;
+        }
+
+        bool expectedDecision = response.Score > response.Threshold;
+
+        return response.IsAnomalous == expectedDecision;
     }
 }

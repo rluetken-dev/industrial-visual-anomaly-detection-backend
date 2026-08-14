@@ -93,6 +93,50 @@ public sealed class PythonServiceAnomalyAnalyzerTests
                 CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData("", "capsule", 1.0, 0.5, true)]
+    [InlineData("model", "", 1.0, 0.5, true)]
+    [InlineData("model", "capsule", -1.0, 0.5, false)]
+    [InlineData("model", "capsule", 1.0, -0.5, true)]
+    [InlineData("model", "capsule", 1.0, 0.5, false)]
+    public async Task InvalidResponseIsMappedToUnavailableException(
+    string modelId,
+    string category,
+    double score,
+    double threshold,
+    bool isAnomalous)
+    {
+        StubHttpMessageHandler handler = new((_, _) =>
+        {
+            HttpResponseMessage response = new(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    modelId,
+                    category,
+                    score,
+                    threshold,
+                    isAnomalous
+                })
+            };
+
+            return Task.FromResult(response);
+        });
+
+        PythonServiceAnomalyAnalyzer analyzer = CreateAnalyzer(handler);
+        using MemoryStream imageStream = new([1]);
+
+        InferenceUnavailableException exception =
+            await Assert.ThrowsAsync<InferenceUnavailableException>(() =>
+                analyzer.AnalyzeAsync(
+                    new ImageAnalysisInput(imageStream, "image/png"),
+                    CancellationToken.None));
+
+        Assert.Equal(
+            "The Python inference service returned an invalid response.",
+            exception.Message);
+    }
+
     private static PythonServiceAnomalyAnalyzer CreateAnalyzer(
         HttpMessageHandler handler)
     {
