@@ -1,6 +1,8 @@
 # Industrial Visual Anomaly Detection Backend
 
 [![CI](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/actions/workflows/ci.yml)
+[![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![Release](https://img.shields.io/github/v/release/rluetken-dev/industrial-visual-anomaly-detection-backend)](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/releases/latest)
 
 ASP.NET Core backend for industrial visual anomaly detection, secure image-upload validation, Python model-service orchestration, and client-neutral API integration.
 
