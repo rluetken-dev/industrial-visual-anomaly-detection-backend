@@ -2,255 +2,496 @@
 
 ## Purpose
 
-This document describes the backend's intended component boundaries, dependency direction, request flow, and integration points.
+This document describes the backend's implemented component boundaries, dependency direction, request flow, and integration points.
 
 It deliberately avoids detailed HTTP schemas and implementation history. Those belong in `ApiContract.md` and `DevelopmentStatus.md`.
 
 ## System Context
 
-The backend provides one application boundary between future clients and anomaly-model inference.
+The backend provides one stable HTTP boundary between client applications and the Python anomaly-inference runtime.
 
 ```text
-┌────────────────┐       ┌──────────────────────────────┐
-│ Web client     │──────>│                              │
-└────────────────┘       │ ASP.NET Core backend         │
-                         │                              │
-┌────────────────┐       │ validation and orchestration │
-│ Desktop client │──────>│                              │
-└────────────────┘       └──────────────┬───────────────┘
-                                        │
-                                        ▼
-                         ┌──────────────────────────────┐
-                         │ Model inference boundary     │
-                         │                              │
-                         │ .NET runtime or Python       │
-                         │ integration – not selected   │
-                         └──────────────────────────────┘
++----------------+       +------------------------------+
+| Web client     |------>|                              |
++----------------+       | ASP.NET Core backend         |
+                         |                              |
++----------------+       | validation and orchestration |
+| Desktop client |------>|                              |
++----------------+       +---------------+--------------+
+                                         |
+                                         | HTTP multipart request
+                                         v
+                         +------------------------------+
+                         | Python FastAPI service       |
+                         |                              |
+                         | preprocessing and inference |
+                         +---------------+--------------+
+                                         |
+                                         v
+                         +------------------------------+
+                         | Exported model artifact      |
+                         |                              |
+                         | metadata and feature memory |
+                         +------------------------------+
 ```
 
-Clients do not load model artifacts, calculate thresholds, or implement anomaly-decision rules.
+Clients do not load model artifacts, calculate thresholds, reproduce preprocessing, or implement anomaly-decision rules. They submit an image to the backend and consume a client-neutral response.
+
+## Repository Boundary
+
+The system is intentionally split across separate repositories.
+
+### Backend Repository
+
+The backend owns:
+
+- the public HTTP API;
+- transport and image-upload validation;
+- request-size limits;
+- application-level inference abstractions;
+- Python-service communication;
+- response and failure mapping;
+- liveness and readiness behavior;
+- CORS, configuration, OpenAPI, logging, and automated backend tests.
+
+### Model Repository
+
+The Python model repository owns:
+
+- dataset validation and deterministic splits;
+- preprocessing and feature extraction;
+- feature-memory construction and sampling;
+- anomaly scoring and threshold selection;
+- model evaluation and heatmap generation;
+- artifact export and loading;
+- reference inference behavior;
+- the internal FastAPI inference service.
+
+The backend does not duplicate Python/PyTorch model logic. The HTTP service contract is the integration boundary between the repositories.
 
 ## Repository Layout
 
-The repository uses `src` for production projects and `tests` for automated test projects.
+The backend repository uses `src` for production code, `tests` for automated tests, `docs` for stable technical documentation, and `scripts` for local verification tooling.
 
 ```text
 industrial-visual-anomaly-detection-backend/
-├── src/
-│   └── IndustrialVisualAnomalyDetection.Api/
-├── tests/
-├── docs/
-├── IndustrialVisualAnomalyDetection.slnx
-├── README.md
-└── COMMITS.md
+|-- .github/
+|   `-- workflows/
+|       `-- ci.yml
+|-- docs/
+|-- scripts/
+|   `-- verify-local-stack.ps1
+|-- src/
+|   `-- IndustrialVisualAnomalyDetection.Api/
+|-- tests/
+|   `-- IndustrialVisualAnomalyDetection.Api.Tests/
+|-- IndustrialVisualAnomalyDetection.slnx
+|-- README.md
+`-- COMMITS.md
 ```
 
-Additional projects shall be added only when a clear responsibility requires them. Empty architectural layers are not created merely to match a template.
+The current implementation remains in one production project because its responsibilities are small and the logical boundaries are already explicit. Additional .NET projects should be introduced only when separation creates a measurable maintenance or deployment benefit.
 
-## Current Project
+## Production Project
 
 ### `IndustrialVisualAnomalyDetection.Api`
 
-The API project currently owns:
+The API project owns application startup, dependency registration, middleware configuration, controllers, public contracts, application abstractions, validation, error handling, and the concrete Python-service adapter.
 
-- application startup and dependency registration;
-- ASP.NET Core middleware configuration;
-- HTTP routing and controllers;
-- configuration binding;
-- future health and API-documentation endpoints.
-
-Controllers shall remain thin. They translate HTTP input into application calls and translate results into HTTP responses. They shall not contain model execution, image processing, threshold logic, or artifact loading.
-
-## Planned Logical Components
-
-The following are logical responsibilities. They do not all require separate .NET projects immediately.
-
-### HTTP Layer
-
-Responsibilities:
-
-- route requests;
-- bind uploads and request data;
-- apply transport-level validation;
-- map application results to status codes and response models;
-- expose versioned contracts.
-
-### Application Layer
-
-Responsibilities:
-
-- coordinate an image-analysis use case;
-- enforce application-level request rules;
-- invoke the configured inference abstraction;
-- construct a client-neutral result;
-- support cancellation and timing.
-
-### Inference Abstraction
-
-Responsibilities:
-
-- accept validated image content and request context;
-- invoke one concrete model runtime;
-- return score, threshold, decision, model identity, and optional localization data;
-- hide runtime-specific implementation details from controllers and clients.
-
-Conceptual interface:
+Its internal directories represent logical boundaries rather than independent deployment units.
 
 ```text
-Analyze image
-    input: validated image content and cancellation
-    output: model result or typed failure
+IndustrialVisualAnomalyDetection.Api/
+|-- Application/
+|   |-- Analysis/
+|   `-- Health/
+|-- Contracts/
+|   |-- Analyses/
+|   `-- Health/
+|-- Controllers/
+|-- Errors/
+|-- Infrastructure/
+|   `-- Inference/
+|-- Options/
+|-- Validation/
+|   `-- Images/
+|-- Program.cs
+|-- appsettings.json
+`-- IndustrialVisualAnomalyDetection.Api.csproj
 ```
 
-The exact C# interface will be introduced only when the first use case is implemented.
+## Logical Components
 
-### Inference Adapter
+### HTTP and Controller Layer
 
-A concrete adapter will implement the inference abstraction. The selected approach remains open:
+Implemented by `AnalysesController`, `HealthController`, and the public request and response contracts.
 
-- direct .NET inference using a compatible portable artifact;
-- communication with a Python inference service;
-- controlled invocation of a Python process for an early local integration.
+Responsibilities:
 
-Only the adapter shall depend on runtime-specific model libraries, process handling, or service clients.
+- expose HTTP routes;
+- bind multipart image uploads;
+- invoke transport-level validation;
+- translate application results into stable responses;
+- map direct validation failures to appropriate status codes;
+- describe endpoint behavior for OpenAPI;
+- measure and log request-level analysis duration.
 
-### Configuration
+Controllers remain thin. They do not execute model inference, parse artifact metadata, reproduce preprocessing, or calculate anomaly thresholds.
 
-Configuration will describe operational choices such as:
+### Validation Layer
 
-- inference adapter selection;
-- trusted artifact or service location;
-- upload size limit;
-- permitted image formats;
-- request timeout;
-- diagnostic options.
+Implemented by `IImageUploadValidator` and `ImageUploadValidator`.
 
-Machine paths and secrets must not be hard-coded or committed.
+Responsibilities:
+
+- require one uploaded image;
+- reject empty files;
+- enforce the configured file-size limit;
+- restrict declared media types to configured PNG and JPEG values;
+- inspect file signatures;
+- ensure the declared media type agrees with the uploaded content.
+
+Validation before inference is intentionally bounded. Full image decoding remains the responsibility of the Python model runtime, which owns the actual preprocessing implementation.
+
+### Application Analysis Boundary
+
+Implemented by:
+
+- `IAnomalyAnalyzer`;
+- `ImageAnalysisInput`;
+- `AnomalyAnalysisResult`;
+- typed analysis exceptions.
+
+`IAnomalyAnalyzer` is the stable application-level boundary consumed by the controller. It accepts validated image content and returns model identity, category, score, threshold, and decision without exposing HTTP, FastAPI, PyTorch, or artifact-layout details.
+
+`ImageAnalysisInput` and `AnomalyAnalysisResult` enforce their own null and value invariants. This prevents invalid state from silently crossing application boundaries.
+
+### Application Health Boundary
+
+Implemented by `IInferenceServiceHealthProbe`.
+
+The health controller depends on this abstraction rather than directly constructing requests to the Python service. Liveness remains independent from external dependencies, while readiness uses the probe to report whether inference can currently be served.
+
+### Python Inference Adapter
+
+Implemented by `PythonServiceAnomalyAnalyzer`.
+
+Responsibilities:
+
+- send validated image content to the configured Python prediction path;
+- use multipart form data with the `image` field;
+- forward the current ASP.NET Core trace identifier to Python as `X-Correlation-ID`;
+- apply the configured `HttpClient` timeout;
+- deserialize and validate the Python response;
+- reject missing, malformed, non-finite, negative, or logically inconsistent values;
+- convert a valid service response into `AnomalyAnalysisResult`;
+- translate transport, timeout, JSON, service-status, and decoded-image failures into typed application exceptions.
+
+The adapter is the only component that knows the Python prediction protocol. Controllers and public response contracts do not depend on its DTOs.
+
+### Python Health Adapter
+
+Implemented by `PythonInferenceServiceHealthProbe`.
+
+Responsibilities:
+
+- call the configured Python health path;
+- return ready for successful HTTP responses;
+- return not ready for connection and adapter-level timeout failures;
+- preserve caller-request cancellation rather than treating it as dependency failure.
+
+The probe is deliberately lightweight and does not execute a model prediction for every readiness request.
+
+### Error Boundary
+
+Implemented through ASP.NET Core Problem Details and dedicated exception handlers.
+
+Responsibilities:
+
+- convert unreadable decoded image content to `400 Bad Request`;
+- convert unavailable, invalid, or timed-out inference behavior to `503 Service Unavailable`;
+- include the backend trace identifier;
+- prevent runtime-specific exceptions, local paths, stack traces, and service internals from entering public responses.
+
+Direct upload-validation failures are mapped by the controller because they are known before the application inference boundary is invoked.
+
+### Configuration Boundary
+
+Strongly typed options represent operational settings.
+
+`ImageUploadOptions` controls:
+
+- maximum image-file size;
+- maximum multipart request-body size;
+- allowed PNG and JPEG media types.
+
+`PythonInferenceOptions` controls:
+
+- service base URL;
+- prediction path;
+- health path;
+- request timeout.
+
+`ApiCorsOptions` controls:
+
+- the explicit set of browser origins allowed to call the API.
+
+All three option groups are validated during startup. Invalid operational configuration prevents the application from starting instead of causing a delayed request-time failure.
+
+Machine-specific values can be supplied through normal ASP.NET Core configuration sources, including environment variables. Secrets and local artifact paths are not committed.
 
 ## Dependency Direction
 
-Dependencies point inward toward stable application abstractions:
+Dependencies point from transport and infrastructure details toward stable application abstractions.
 
 ```text
-HTTP/controller code
-        │
-        ▼
-Application use case
-        │
-        ▼
-Inference abstraction
-        ▲
-        │
-Concrete inference adapter
+AnalysesController
+        |
+        +----> IImageUploadValidator <---- ImageUploadValidator
+        |
+        `----> IAnomalyAnalyzer <--------- PythonServiceAnomalyAnalyzer
+
+HealthController
+        |
+        `----> IInferenceServiceHealthProbe
+                         ^
+                         |
+             PythonInferenceServiceHealthProbe
 ```
 
-The application may depend on the inference abstraction. A concrete adapter implements that abstraction. The application must not depend directly on a Python process, ONNX Runtime, file-system artifact layout, or external HTTP service.
+The controllers know the application and validation abstractions. They do not know Python response DTOs, service URLs, `HttpClient` setup, PyTorch types, or artifact files.
 
-## Initial Request Flow
+Infrastructure adapters implement application interfaces and are registered through dependency injection in `Program.cs`.
 
-The intended analysis flow is:
+## Dependency Injection and Lifetimes
 
-1. the client submits one image;
-2. ASP.NET Core applies request and size limits;
-3. the HTTP layer validates required upload metadata;
-4. the application validates supported image content;
-5. the application invokes the configured inference abstraction;
-6. the adapter executes the model runtime;
-7. the model result is converted into a client-neutral response;
-8. the backend records bounded diagnostics;
-9. the response is returned to the client.
+The composition root is `Program.cs`.
 
-Failures are returned through a consistent error contract rather than runtime-specific exceptions.
+- `IImageUploadValidator` is registered as scoped;
+- `IAnomalyAnalyzer` is provided by a typed `HttpClient` using `PythonServiceAnomalyAnalyzer`;
+- `IInferenceServiceHealthProbe` is provided by a separate typed `HttpClient`;
+- each typed client receives the configured base address and timeout;
+- exception handlers are registered with ASP.NET Core;
+- options are bound and validated on startup;
+- controllers and OpenAPI services are registered centrally.
+
+The two typed HTTP clients keep analysis and readiness responsibilities separate while sharing the same validated service configuration.
+
+## Middleware and Endpoint Pipeline
+
+The application pipeline is composed in this order:
+
+1. map the OpenAPI document in the Development environment;
+2. handle typed exceptions through the exception-handler pipeline;
+3. generate responses for otherwise empty error status codes;
+4. redirect HTTP to HTTPS;
+5. apply the configured CORS policy;
+6. apply authorization middleware;
+7. map controller endpoints.
+
+Authentication and authorization policies are not currently implemented. The authorization middleware leaves room for future policy introduction without implying that the current API is access-controlled.
+
+## Analysis Request Flow
+
+The implemented analysis flow is:
+
+1. the client submits one multipart image to `POST /api/v1/analyses`;
+2. Kestrel and multipart form handling apply the configured request-body limit;
+3. ASP.NET Core binds the form to `AnalysisRequest`;
+4. `AnalysesController` invokes `IImageUploadValidator`;
+5. invalid size, type, presence, or signature returns a controlled client error;
+6. the controller opens the validated upload stream and creates `ImageAnalysisInput`;
+7. `IAnomalyAnalyzer` dispatches to `PythonServiceAnomalyAnalyzer`;
+8. the adapter posts the image to the Python prediction endpoint;
+9. the Python service decodes and preprocesses the image, executes inference, and returns its result;
+10. the adapter validates the returned contract and creates `AnomalyAnalysisResult`;
+11. the controller maps the result to `AnalysisResponse`;
+12. the backend returns the result with processing time and trace identifier.
+
+Raw image bytes are not persisted or logged by the backend.
+
+## Failure Flow
+
+Failures are handled at the boundary where they become known.
+
+### Before Inference
+
+- missing or empty upload: `400 Bad Request`;
+- file-signature mismatch or invalid image declaration: `400 Bad Request`;
+- file too large: `413 Payload Too Large`;
+- unsupported media type: `415 Unsupported Media Type`.
+
+### During Inference
+
+- Python service rejects unreadable decoded image content: `400 Bad Request`;
+- Python service unavailable: `503 Service Unavailable`;
+- Python request exceeds the configured adapter timeout: `503 Service Unavailable`;
+- Python returns malformed or inconsistent JSON: `503 Service Unavailable`;
+- Python returns another unsuccessful service status: `503 Service Unavailable`.
+
+Caller cancellation is propagated through the asynchronous call chain and is not deliberately converted into a service-unavailable response.
 
 ## Health Model
 
-Health is separated into two concepts:
+Health is separated into two concepts.
 
-- **Liveness:** the ASP.NET Core process is running and can answer requests.
-- **Readiness:** required model configuration and inference dependencies are available.
+### Liveness
 
-Liveness must not depend on a costly inference call. Readiness may verify lightweight artifact or service availability without exposing sensitive details.
+`GET /health/live` verifies that the ASP.NET Core process is running and can answer requests. It does not contact Python or execute inference.
+
+### Readiness
+
+`GET /health/ready` calls the configured Python health endpoint through `IInferenceServiceHealthProbe`.
+
+- Python health succeeds: backend returns `200 OK` and `ready`;
+- Python cannot be reached or times out: backend returns `503 Service Unavailable` and `not_ready`.
+
+Readiness verifies service availability, not prediction quality or dataset validity. The Python service is responsible for loading and validating its configured artifact during its own startup.
 
 ## Model Contract Boundary
 
-The backend must preserve the behavior defined by the selected model artifact or inference service:
+The Python runtime remains authoritative for:
 
-- expected input preprocessing;
-- image resolution;
-- category and model identity;
-- patch-grid interpretation when localization is available;
-- image-score aggregation;
-- decision threshold;
-- normal-versus-anomalous comparison rule.
+- expected preprocessing;
+- input resolution;
+- feature extraction;
+- feature-memory interpretation;
+- patch-score aggregation;
+- threshold selection;
+- normal-versus-anomalous decision logic;
+- model and category identity.
 
-The model repository remains the authoritative source for model-development evidence. The backend documents only the runtime contract it consumes.
+The backend validates that a received score and threshold are finite and non-negative and that the returned decision is consistent with `score > threshold`. It does not recalculate the model output independently.
 
-## Error Boundary
+The current public backend response does not expose patch maps or heatmaps.
 
-Runtime-specific failures shall be translated into stable application failure categories, for example:
+## Request and Correlation Identity
 
-- invalid image;
-- unsupported media type;
-- request too large;
-- model unavailable;
-- incompatible artifact;
-- inference timeout;
-- inference failure.
+The backend uses `HttpContext.TraceIdentifier` as the analysis request identity.
 
-Public responses shall not include stack traces, local paths, command lines, secrets, or raw model-loader errors.
+That value is:
+
+- included in structured backend logs;
+- passed through `ImageAnalysisInput`;
+- forwarded to the Python service as `X-Correlation-ID`;
+- included in successful analysis responses;
+- included in mapped Problem Details responses.
+
+The current implementation does not replace `HttpContext.TraceIdentifier` with a client-supplied correlation header. Client-controlled correlation adoption would require an explicit, validated middleware decision.
 
 ## Observability Boundary
 
-The backend may record:
+The backend records bounded operational information:
 
 - trace identifier;
-- endpoint and outcome;
-- request and inference durations;
-- model identity;
-- normalized failure category.
+- upload validation outcome;
+- declared content type and file size;
+- model identity and category after successful inference;
+- normal or anomalous decision;
+- request-level processing duration;
+- normalized failure category through mapped exceptions.
 
-It shall not log raw images or full sensitive configuration by default.
+The backend does not log raw images, full model feature memory, local artifact paths, secrets, or Python stack traces.
+
+Production metrics, distributed tracing export, dashboards, and alerting are deferred until a deployment environment exists.
+
+## CORS Boundary
+
+CORS is configured through an explicit allowlist.
+
+- no browser origin is allowed by default;
+- configured origins must be absolute HTTP or HTTPS origins without paths, queries, or fragments;
+- an allowed origin may use the API methods and headers required by the browser client;
+- CORS does not replace authentication, authorization, or network security.
+
+The first web client can supply its development origin through configuration without requiring controller changes.
+
+## OpenAPI Boundary
+
+OpenAPI is exposed only in the Development environment. The document describes the public HTTP transport contract and is protected by integration tests for the analysis operation.
+
+OpenAPI does not describe internal Python DTOs, model artifact files, feature-memory structure, or implementation-specific exceptions.
 
 ## Testing Boundaries
 
-The planned test strategy has three levels:
+The automated test strategy has two ordinary CI levels.
 
-1. unit tests for validation, mapping, and application behavior;
-2. integration tests for HTTP contracts and dependency registration;
-3. parity tests comparing a concrete adapter with fixed Python reference results.
+### Unit Tests
 
-Large benchmark datasets and feature memories shall not be required for ordinary CI. Test fixtures must be small, synthetic, self-created, or otherwise safe to version.
+Unit tests cover:
+
+- upload validation;
+- Python adapter request and response behavior;
+- Python health probing;
+- exception and invariant enforcement;
+- response consistency rules.
+
+### Integration Tests
+
+Integration tests cover:
+
+- liveness and readiness contracts;
+- analysis endpoint behavior;
+- Problem Details responses;
+- dependency registration and options binding;
+- startup configuration validation;
+- CORS behavior;
+- OpenAPI request and response metadata.
+
+The normal backend test suite uses controlled HTTP handlers and test hosts. It does not require MVTec datasets, a feature memory, or a running Python service.
+
+### End-to-End Verification
+
+`scripts/verify-local-stack.ps1` performs manual local verification across the real Python service and backend. An optional image exercises the complete analysis path.
+
+This end-to-end check complements automated CI but is not part of ordinary backend CI because the large external model artifact is intentionally not stored in the repository.
+
+## Security and Trust Boundaries
+
+Uploaded files are untrusted. The backend applies bounded transport validation before forwarding content to Python, and the Python runtime performs actual image decoding.
+
+The Python service is currently treated as an internal trusted dependency, but its response is still validated before use. Public responses never expose local paths, raw loader errors, command lines, secrets, or stack traces.
+
+The current local setup does not provide authentication or transport hardening between backend and Python. Production deployment must define network isolation, service authentication if required, TLS termination, rate limiting, and operational secret handling.
 
 ## Deferred Architecture
 
-The initial architecture does not require:
+The current architecture does not require:
 
-- database persistence;
-- authentication or authorization;
-- message queues;
-- distributed processing;
+- database persistence or analysis history;
+- authentication and authorization policies;
+- message queues or distributed workers;
 - background model training;
-- multiple deployed model versions;
-- production camera or PLC integration.
+- direct .NET model inference;
+- Python child-process management by the backend;
+- multiple active model versions or category routing;
+- heatmap transport through the public contract;
+- batch inference;
+- production camera or PLC integration;
+- container orchestration.
 
-These components shall be introduced only after an explicit requirement and boundary decision.
+These components should be introduced only after an explicit, verified requirement.
 
-## Open Decisions
+## Remaining Architecture Decisions
 
-- final inference runtime and adapter;
-- whether application and infrastructure responsibilities need separate projects;
-- localization response representation;
-- artifact deployment and integrity validation;
-- model-readiness verification depth;
-- future persistence and authentication requirements.
+- client-side workflow and presentation boundaries;
+- whether localization data belongs in a future public response;
+- artifact distribution and deployment packaging;
+- Docker Compose topology for the complete stack;
+- production service-to-service security;
+- future persistence, authentication, and authorization requirements;
+- performance targets and scaling strategy under deployment-like load.
+
+None of these decisions blocks initial web-client development against the current backend contract.
 
 ## Related Documentation
 
 - `ProjectSpecification.md` – stable scope and requirements
 - `ApiContract.md` – versioned HTTP contracts
+- `ModelIntegrationStrategy.md` – selected runtime-integration approach
 - `DevelopmentStatus.md` – verified implementation progress
 - Model repository: <https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model>
 
 ## Last Updated
 
-2026-08-14
+2026-08-15

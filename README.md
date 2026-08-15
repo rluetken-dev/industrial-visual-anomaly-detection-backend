@@ -17,7 +17,7 @@ The backend provides a stable HTTP boundary for web and desktop clients. Model d
 - liveness and dependency-aware readiness endpoints;
 - anomaly score, threshold, decision, model identity, processing time, and trace ID responses;
 - Problem Details responses for validation and inference failures;
-- request correlation through `X-Correlation-ID`;
+- backend trace-ID propagation to the Python service through `X-Correlation-ID`;
 - configurable CORS policy;
 - generated OpenAPI document in the Development environment;
 - unit and integration tests;
@@ -78,6 +78,9 @@ industrial-visual-anomaly-detection-backend/
 |   `-- IndustrialVisualAnomalyDetection.Api.Tests/
 |       |-- Integration/
 |       `-- Unit/
+|-- .editorconfig
+|-- .gitattributes
+|-- .gitignore
 |-- COMMITS.md
 |-- IndustrialVisualAnomalyDetection.slnx
 `-- README.md
@@ -174,7 +177,7 @@ The complete feature memory is approximately 410 MiB. Artifact export and thresh
 
 ## Start the Complete Local Stack
 
-Use two terminals and keep both processes running.
+Use three terminals: one for the Python service, one for the backend, and one for verification commands. Keep the first two processes running.
 
 ### 1. Start the Python Inference Service
 
@@ -346,7 +349,7 @@ Do not commit secrets, private service addresses, machine-specific artifact loca
 
 ## Request Correlation
 
-Clients may send an `X-Correlation-ID` header. The backend propagates a valid supplied identifier or creates a trace identifier when none is provided. The identifier is included in analysis responses, Problem Details responses, and structured logs.
+The backend uses the current ASP.NET Core trace identifier for each analysis. It forwards that value to the Python service as `X-Correlation-ID` and includes it in analysis responses, Problem Details responses, and structured logs. The current implementation does not adopt a client-supplied correlation header as its own trace identifier.
 
 ## Common Problems
 

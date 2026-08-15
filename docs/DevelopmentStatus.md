@@ -8,73 +8,152 @@ It is intentionally concise. Stable requirements belong in `ProjectSpecification
 
 ## Current Phase
 
-**Phase 1 – Backend foundation**
+**Backend integration baseline complete**
 
-The current objective is to establish a small, testable ASP.NET Core API foundation before model integration begins.
+The backend is ready to serve as the stable HTTP boundary for initial web-client development. It validates uploaded images, delegates inference to the Python model service, maps results and failures into the public API contract, and reports dependency-aware readiness.
+
+Further backend work should now be driven by concrete client, deployment, or operational requirements rather than speculative expansion.
 
 ## Verified Environment
 
-- Operating system used for initial development: Windows
-- .NET SDK: `10.0.400`
-- Git: `2.55.0.windows.3`
-- Repository location is outside the model repository
-- Complete solution build succeeds
-- Automated API tests succeed
+- operating system used for local development: Windows;
+- .NET SDK: `10.0.400`;
+- Git: `2.55.0.windows.3`;
+- API target framework: .NET 10;
+- repository maintained separately from the Python model repository;
+- Debug and Release solution builds succeed;
+- all automated unit and integration tests succeed;
+- GitHub Actions CI succeeds on `main`;
+- the complete local Python-service-to-backend analysis flow has been verified with a real MVTec AD image.
 
 ## Implemented
 
-- repository initialized with Git on the `main` branch;
+### Repository and Build Foundation
+
+- Git repository initialized on the `main` branch and connected to GitHub;
 - `IndustrialVisualAnomalyDetection.slnx` created;
-- `src` and `tests` directory conventions selected;
+- `src`, `tests`, `docs`, and `scripts` directory conventions established;
 - controller-based ASP.NET Core Web API project created;
-- API project targets .NET 10;
-- API project added to the solution;
+- xUnit API test project created and added to the solution;
+- repository `.gitignore`, `.gitattributes`, and `.editorconfig` configured;
 - generated WeatherForecast example removed;
+- GitHub Actions CI added for restore, Release build, and automated tests;
+- Conventional Commit guidelines documented.
+
+### HTTP API
+
 - liveness endpoint implemented at `GET /health/live`;
-- readiness endpoint implemented at `GET /health/ready`;
-- health response contract introduced;
-- xUnit API test project created;
-- ASP.NET Core integration-test infrastructure added;
-- liveness and readiness endpoints covered by integration tests;
-- HTTPS test-client configuration established;
-- repository `.gitignore` configured for Visual Studio, .NET output, local configuration, uploads, model artifacts, logs, and test output;
-- repository `.editorconfig` created;
-- complete solution build verified;
-- two automated integration tests verified;
-- initial documentation structure created;
-- initial project specification created;
-- initial architecture overview created;
-- initial API contract created;
-- initial model-integration strategy created;
-- commit-message guidelines created.
+- dependency-aware readiness endpoint implemented at `GET /health/ready`;
+- versioned analysis endpoint implemented at `POST /api/v1/analyses`;
+- multipart image-upload contract implemented;
+- response contract includes model identity, category, score, threshold, decision, processing time, and trace ID;
+- route-based API version identifier established through `/api/v1`;
+- OpenAPI document exposed in the Development environment;
+- analysis operation ID, summary, description, multipart request, and binary image schema verified by automated tests.
+
+### Image Validation and Request Limits
+
+- missing and empty uploads rejected;
+- supported media types restricted to PNG and JPEG by default;
+- maximum image size configured and enforced;
+- maximum multipart request-body size configured and enforced;
+- PNG and JPEG file signatures validated before inference;
+- media type and file signature must agree;
+- unreadable image content returned by the Python service mapped to `400 Bad Request`;
+- upload and request limits bound from validated startup configuration.
+
+### Inference Integration
+
+- application-level `IAnomalyAnalyzer` abstraction introduced;
+- concrete HTTP adapter implemented for the Python FastAPI inference service;
+- backend sends the validated image as multipart form data;
+- Python inference responses validated before they enter the public API contract;
+- invalid or unavailable inference responses mapped to controlled failures;
+- configurable service base URL, prediction path, health path, and timeout implemented;
+- inference-service health probe implemented;
+- readiness reflects the actual availability of the Python inference service;
+- model-runtime and artifact-loading logic remain owned by the Python repository.
+
+### Error Handling and Observability
+
+- ASP.NET Core Problem Details enabled;
+- inference-unavailable failures mapped to `503 Service Unavailable`;
+- invalid decoded image content mapped to `400 Bad Request`;
+- validation failures returned with controlled status codes and messages;
+- trace identifier included in Problem Details responses;
+- `X-Correlation-ID` accepted and propagated when valid;
+- generated trace identifier used when the caller supplies none;
+- structured analysis logging added without logging raw image content;
+- processing time included in successful analysis responses;
+- constructor dependencies and domain inputs protected by explicit null and invariant checks.
+
+### Configuration and Client Integration
+
+- image-upload options bound and validated during startup;
+- Python inference options bound and validated during startup;
+- CORS origins bound and validated during startup;
+- configurable CORS policy implemented;
+- no browser origin allowed by default;
+- explicitly configured origins supported for the future web client;
+- invalid configuration prevents startup rather than failing during a request.
+
+### Testing and Local Verification
+
+- unit tests cover image validation, inference response handling, health probing, exceptions, and domain invariants;
+- integration tests cover health endpoints, analysis behavior, Problem Details, startup options, CORS, and OpenAPI;
+- backend tests run without a dataset or real model artifact;
+- `scripts/verify-local-stack.ps1` verifies Python liveness, backend liveness, and backend readiness;
+- the verification script optionally submits a real image through the backend analysis endpoint;
+- a real Capsule `poke` image was classified as anomalous through the complete local stack;
+- the verified response contained the expected model identity, category, score, threshold, decision, processing time, and trace ID.
+
+### Documentation
+
+- repository README updated with complete local setup and troubleshooting instructions;
+- initial project specification, architecture overview, API contract, model-integration strategy, and development-status documents created;
+- model artifact prerequisites and the two-repository startup sequence documented;
+- local verification workflow documented.
 
 ## Current Repository Shape
 
 ```text
 industrial-visual-anomaly-detection-backend/
-├── docs/
-│   ├── ApiContract.md
-│   ├── ArchitectureOverview.md
-│   ├── DevelopmentStatus.md
-│   ├── ModelIntegrationStrategy.md
-│   └── ProjectSpecification.md
-├── src/
-│   └── IndustrialVisualAnomalyDetection.Api/
-│       ├── Contracts/
-│       │   └── Health/
-│       ├── Controllers/
-│       ├── Properties/
-│       ├── Program.cs
-│       ├── appsettings.Development.json
-│       ├── appsettings.json
-│       └── IndustrialVisualAnomalyDetection.Api.csproj
-├── tests/
-│   └── IndustrialVisualAnomalyDetection.Api.Tests/
-├── .editorconfig
-├── .gitignore
-├── COMMITS.md
-├── IndustrialVisualAnomalyDetection.slnx
-└── README.md
+|-- .github/
+|   `-- workflows/
+|       `-- ci.yml
+|-- docs/
+|   |-- ApiContract.md
+|   |-- ArchitectureOverview.md
+|   |-- DevelopmentStatus.md
+|   |-- ModelIntegrationStrategy.md
+|   `-- ProjectSpecification.md
+|-- scripts/
+|   `-- verify-local-stack.ps1
+|-- src/
+|   `-- IndustrialVisualAnomalyDetection.Api/
+|       |-- Application/
+|       |-- Contracts/
+|       |-- Controllers/
+|       |-- Errors/
+|       |-- Infrastructure/
+|       |-- Options/
+|       |-- Properties/
+|       |-- Validation/
+|       |-- Program.cs
+|       |-- appsettings.Development.json
+|       |-- appsettings.json
+|       `-- IndustrialVisualAnomalyDetection.Api.csproj
+|-- tests/
+|   `-- IndustrialVisualAnomalyDetection.Api.Tests/
+|       |-- Integration/
+|       |-- Unit/
+|       `-- IndustrialVisualAnomalyDetection.Api.Tests.csproj
+|-- .editorconfig
+|-- .gitattributes
+|-- .gitignore
+|-- COMMITS.md
+|-- IndustrialVisualAnomalyDetection.slnx
+`-- README.md
 ```
 
 ## Verified HTTP Endpoints
@@ -85,7 +164,7 @@ industrial-visual-anomaly-detection-backend/
 GET /health/live
 ```
 
-Returns HTTP `200 OK` with:
+Returns HTTP `200 OK` while the backend process is running:
 
 ```json
 {
@@ -99,7 +178,7 @@ Returns HTTP `200 OK` with:
 GET /health/ready
 ```
 
-Returns HTTP `200 OK` with:
+Returns HTTP `200 OK` when the configured Python inference service is healthy:
 
 ```json
 {
@@ -107,53 +186,73 @@ Returns HTTP `200 OK` with:
 }
 ```
 
-The current readiness endpoint verifies only that the application is running. External dependencies and model readiness are not checked yet.
+Returns HTTP `503 Service Unavailable` when the dependency cannot serve inference:
 
-## Automated Tests
+```json
+{
+  "status": "not_ready"
+}
+```
 
-The current test suite contains two passing integration tests:
+### Image Analysis
 
-- liveness endpoint returns HTTP `200 OK` and the expected response;
-- readiness endpoint returns HTTP `200 OK` and the expected response.
+```text
+POST /api/v1/analyses
+Content-Type: multipart/form-data
+Form field: image
+```
 
-## Not Yet Implemented
+The endpoint accepts a validated PNG or JPEG image and returns the mapped anomaly-analysis result. The verified local integration uses the Python service at `http://127.0.0.1:8000` and the backend HTTPS profile at `https://localhost:7056`.
 
-- initial repository commit;
-- remote Git repository and CI workflow;
-- API versioning convention;
-- common Problem Details response;
-- image upload and validation;
-- inference abstraction;
-- concrete model adapter;
-- model artifact loading;
-- model compatibility and integrity validation;
-- meaningful readiness checks for model availability;
-- analysis endpoint;
-- OpenAPI customization;
-- backend model configuration;
-- observability beyond default ASP.NET Core logging;
-- web or desktop client integration.
+## Selected Model-Integration Boundary
 
-## Open Technical Decision
+The backend communicates with the Python inference runtime over HTTP.
 
-The model-inference boundary has not been selected. Candidate approaches are:
+This decision is implemented and no longer open for the current baseline. The boundary provides:
 
-- direct .NET inference with a compatible portable artifact;
-- communication with a Python inference service;
-- controlled Python process invocation for early local integration.
+- separation between ASP.NET Core API concerns and Python/PyTorch runtime concerns;
+- reuse of the verified Python reference inference path;
+- independent testing and lifecycle management;
+- a replaceable adapter behind `IAnomalyAnalyzer`;
+- a stable contract for future web and desktop clients.
 
-Controllers shall not depend directly on one candidate before an application-level inference abstraction has been defined.
+Direct .NET inference and ad hoc Python process invocation are not part of the current implementation.
+
+## External Runtime Requirement
+
+Complete local inference requires the separate Python model repository and a compatible exported model artifact.
+
+The artifact is not stored in this backend repository. The verified Capsule artifact contains `metadata.json` and `feature_memory.pt`, and its complete feature memory is approximately 410 MiB. Until an approved distribution mechanism exists, users must export it locally from their own permitted MVTec AD copy by following the model repository instructions.
+
+Backend unit and integration tests do not require this external runtime.
+
+## Deferred or Optional Work
+
+The following items are deliberately deferred and do not block initial frontend development:
+
+- web-client implementation;
+- desktop-client implementation;
+- Docker and Docker Compose packaging;
+- production deployment configuration;
+- production monitoring, metrics, tracing backend, and alerting;
+- rate limiting and other deployment-specific abuse controls;
+- authentication and authorization;
+- persistence and analysis history;
+- heatmap transport through the public backend contract;
+- batch analysis;
+- model selection across multiple artifacts or categories;
+- an approved model-artifact distribution mechanism;
+- performance and load testing under deployment-like conditions.
+
+These capabilities should be added only when a verified product or deployment requirement justifies them.
 
 ## Immediate Next Steps
 
-1. create and verify the initial repository commit;
-2. create the remote repository and push the `main` branch;
-3. establish a CI workflow for restore, build, and tests;
-4. define the API versioning convention;
-5. introduce a common Problem Details response;
-6. define the first image-upload request contract and validation rules;
-7. introduce an inference abstraction;
-8. select and implement the first concrete model adapter.
+1. synchronize the remaining backend documentation with the completed integration baseline;
+2. preserve the current API contract while implementing the first web client;
+3. add only backend changes that are required by verified client integration needs;
+4. perform another complete end-to-end verification after the first client flow is implemented;
+5. evaluate Docker Compose and deployment documentation after the model service, backend, and client are stable together.
 
 ## Verification Commands
 
@@ -163,22 +262,44 @@ Build the solution:
 dotnet build .\IndustrialVisualAnomalyDetection.slnx
 ```
 
-List solution projects:
-
-```powershell
-dotnet sln .\IndustrialVisualAnomalyDetection.slnx list
-```
-
 Run all automated tests:
 
 ```powershell
 dotnet test .\IndustrialVisualAnomalyDetection.slnx
 ```
 
+Build and test the Release configuration:
+
+```powershell
+dotnet build .\IndustrialVisualAnomalyDetection.slnx --configuration Release
+dotnet test .\IndustrialVisualAnomalyDetection.slnx --configuration Release --no-build
+```
+
+Verify the running local stack:
+
+```powershell
+powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File .\scripts\verify-local-stack.ps1
+```
+
+Include a real image analysis:
+
+```powershell
+powershell.exe `
+    -NoProfile `
+    -ExecutionPolicy Bypass `
+    -File .\scripts\verify-local-stack.ps1 `
+    -ImagePath "C:\path\to\image.png"
+```
+
 ## Documentation Update Rule
 
 Update this document after a verified milestone or meaningful group of changes. Do not update it for every small internal edit.
 
+Do not record planned behavior as implemented. Avoid fixed automated-test counts because the suite changes frequently; record whether the complete suite passes instead.
+
 ## Last Updated
 
-2026-08-14
+2026-08-15
