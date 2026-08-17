@@ -7,30 +7,26 @@ public sealed record AnomalyAnalysisResult
         string category,
         double score,
         double threshold,
-        bool isAnomalous)
+        bool isAnomalous,
+        AnomalyHeatmap heatmap)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
         ArgumentException.ThrowIfNullOrWhiteSpace(category);
+        ArgumentNullException.ThrowIfNull(heatmap);
 
         if (!double.IsFinite(score) || score < 0)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(score),
-                "The anomaly score must be a finite, non-negative value.");
+            throw new ArgumentOutOfRangeException(nameof(score), "The anomaly score must be a finite, non-negative value.");
         }
 
         if (!double.IsFinite(threshold) || threshold < 0)
         {
-            throw new ArgumentOutOfRangeException(
-                nameof(threshold),
-                "The decision threshold must be a finite, non-negative value.");
+            throw new ArgumentOutOfRangeException(nameof(threshold), "The decision threshold must be a finite, non-negative value.");
         }
 
         if (isAnomalous != (score > threshold))
         {
-            throw new ArgumentException(
-                "The anomaly decision must match the score and threshold.",
-                nameof(isAnomalous));
+            throw new ArgumentException("The anomaly decision must match the score and threshold.", nameof(isAnomalous));
         }
 
         ModelId = modelId;
@@ -38,6 +34,7 @@ public sealed record AnomalyAnalysisResult
         Score = score;
         Threshold = threshold;
         IsAnomalous = isAnomalous;
+        Heatmap = heatmap;
     }
 
     public string ModelId { get; }
@@ -45,4 +42,5 @@ public sealed record AnomalyAnalysisResult
     public double Score { get; }
     public double Threshold { get; }
     public bool IsAnomalous { get; }
+    public AnomalyHeatmap Heatmap { get; }
 }

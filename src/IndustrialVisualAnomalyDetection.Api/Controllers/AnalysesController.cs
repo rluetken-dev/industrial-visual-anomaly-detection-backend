@@ -127,7 +127,12 @@ public sealed class AnalysesController : ControllerBase
             result.Threshold,
             result.IsAnomalous ? "anomalous" : "normal",
             stopwatch.ElapsedMilliseconds,
-            HttpContext.TraceIdentifier);
+            HttpContext.TraceIdentifier,
+            new AnalysisHeatmapResponse(
+                result.Heatmap.ContentType,
+                result.Heatmap.Width,
+                result.Heatmap.Height,
+                result.Heatmap.DataBase64));
 
         return Ok(response);
     }

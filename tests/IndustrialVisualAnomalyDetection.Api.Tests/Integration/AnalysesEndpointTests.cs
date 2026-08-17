@@ -151,7 +151,12 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
             "capsule",
             4.992109,
             2.501822,
-            true);
+            true,
+            new AnomalyHeatmap(
+                "image/png",
+                320,
+                320,
+                Convert.ToBase64String([1, 2, 3])));
 
         using WebApplicationFactory<Program> factory = _factory.WithWebHostBuilder(builder =>
         {
@@ -179,6 +184,10 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
         Assert.Equal("anomalous", result.Decision);
         Assert.True(result.ProcessingTimeMs >= 0);
         Assert.False(string.IsNullOrWhiteSpace(result.TraceId));
+        Assert.Equal("image/png", result.Heatmap.ContentType);
+        Assert.Equal(320, result.Heatmap.Width);
+        Assert.Equal(320, result.Heatmap.Height);
+        Assert.Equal(Convert.ToBase64String([1, 2, 3]), result.Heatmap.DataBase64);
     }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)

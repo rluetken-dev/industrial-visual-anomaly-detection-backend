@@ -6,4 +6,5 @@ public sealed record AnalysisResponse(
     double Threshold,
     string Decision,
     long ProcessingTimeMs,
-    string TraceId);
+    string TraceId,
+    AnalysisHeatmapResponse Heatmap);

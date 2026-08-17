@@ -4,6 +4,12 @@ namespace IndustrialVisualAnomalyDetection.Api.Tests.Unit;
 
 public sealed class AnomalyAnalysisResultTests
 {
+    private static readonly AnomalyHeatmap ValidHeatmap = new(
+        "image/png",
+        320,
+        320,
+        Convert.ToBase64String([1, 2, 3]));
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
@@ -15,7 +21,8 @@ public sealed class AnomalyAnalysisResultTests
                 "capsule",
                 2.0,
                 1.0,
-                true));
+                true,
+                ValidHeatmap));
     }
 
     [Theory]
@@ -29,7 +36,8 @@ public sealed class AnomalyAnalysisResultTests
                 category,
                 2.0,
                 1.0,
-                true));
+                true,
+                ValidHeatmap));
     }
 
     [Theory]
@@ -44,7 +52,8 @@ public sealed class AnomalyAnalysisResultTests
                 "capsule",
                 score,
                 1.0,
-                false));
+                false,
+                ValidHeatmap));
     }
 
     [Theory]
@@ -59,7 +68,8 @@ public sealed class AnomalyAnalysisResultTests
                 "capsule",
                 1.0,
                 threshold,
-                false));
+                false,
+                ValidHeatmap));
     }
 
     [Fact]
@@ -71,7 +81,21 @@ public sealed class AnomalyAnalysisResultTests
                 "capsule",
                 2.0,
                 1.0,
-                false));
+                false,
+                ValidHeatmap));
+    }
+
+    [Fact]
+    public void MissingHeatmapIsRejected()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            new AnomalyAnalysisResult(
+                "model",
+                "capsule",
+                2.0,
+                1.0,
+                true,
+                null!));
     }
 
     [Fact]
@@ -82,12 +106,14 @@ public sealed class AnomalyAnalysisResultTests
             "capsule",
             2.0,
             1.0,
-            true);
+            true,
+            ValidHeatmap);
 
         Assert.Equal("model", result.ModelId);
         Assert.Equal("capsule", result.Category);
         Assert.Equal(2.0, result.Score);
         Assert.Equal(1.0, result.Threshold);
         Assert.True(result.IsAnomalous);
+        Assert.Same(ValidHeatmap, result.Heatmap);
     }
 }

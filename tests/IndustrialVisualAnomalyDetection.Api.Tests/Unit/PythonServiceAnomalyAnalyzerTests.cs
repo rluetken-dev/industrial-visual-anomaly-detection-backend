@@ -11,20 +11,19 @@ public sealed class PythonServiceAnomalyAnalyzerTests
     [Fact]
     public async Task SuccessfulResponseIsMappedToAnalysisResult()
     {
+        string heatmapData = Convert.ToBase64String([1, 2, 3]);
+
         StubHttpMessageHandler handler = new(async (request, cancellationToken) =>
         {
-            Assert.Equal(HttpMethod.Post, request.Method); 
+            Assert.Equal(HttpMethod.Post, request.Method);
             Assert.Equal("http://localhost:8000/api/v1/predictions", request.RequestUri?.AbsoluteUri);
             Assert.True(request.Headers.TryGetValues("X-Correlation-ID", out IEnumerable<string>? traceIds));
             Assert.Equal("trace-123", Assert.Single(traceIds));
 
-            MultipartFormDataContent multipart =
-                Assert.IsType<MultipartFormDataContent>(request.Content);
-
+            MultipartFormDataContent multipart = Assert.IsType<MultipartFormDataContent>(request.Content);
             HttpContent uploadedImage = Assert.Single(multipart);
 
             Assert.Equal("image/png", uploadedImage.Headers.ContentType?.MediaType);
-
             Assert.Equal("image", uploadedImage.Headers.ContentDisposition?.Name?.Trim('"'));
 
             byte[] uploadedBytes = await uploadedImage.ReadAsByteArrayAsync(cancellationToken);
@@ -39,7 +38,14 @@ public sealed class PythonServiceAnomalyAnalyzerTests
                     category = "capsule",
                     score = 4.992109,
                     threshold = 2.501822,
-                    isAnomalous = true
+                    isAnomalous = true,
+                    heatmap = new
+                    {
+                        contentType = "image/png",
+                        width = 320,
+                        height = 320,
+                        dataBase64 = heatmapData
+                    }
                 })
             };
         });
@@ -56,6 +62,10 @@ public sealed class PythonServiceAnomalyAnalyzerTests
         Assert.Equal(4.992109, result.Score);
         Assert.Equal(2.501822, result.Threshold);
         Assert.True(result.IsAnomalous);
+        Assert.Equal("image/png", result.Heatmap.ContentType);
+        Assert.Equal(320, result.Heatmap.Width);
+        Assert.Equal(320, result.Heatmap.Height);
+        Assert.Equal(heatmapData, result.Heatmap.DataBase64);
     }
 
     [Fact]
@@ -157,11 +167,11 @@ public sealed class PythonServiceAnomalyAnalyzerTests
     [InlineData("model", "capsule", 1.0, -0.5, true)]
     [InlineData("model", "capsule", 1.0, 0.5, false)]
     public async Task InvalidResponseIsMappedToUnavailableException(
-    string modelId,
-    string category,
-    double score,
-    double threshold,
-    bool isAnomalous)
+        string modelId,
+        string category,
+        double score,
+        double threshold,
+        bool isAnomalous)
     {
         StubHttpMessageHandler handler = new((_, _) =>
         {
@@ -173,7 +183,48 @@ public sealed class PythonServiceAnomalyAnalyzerTests
                     category,
                     score,
                     threshold,
-                    isAnomalous
+                    isAnomalous,
+                    heatmap = new
+                    {
+                        contentType = "image/png",
+                        width = 320,
+                        height = 320,
+                        dataBase64 = Convert.ToBase64String([1, 2, 3])
+                    }
+                })
+            };
+
+            return Task.FromResult(response);
+        });
+
+        PythonServiceAnomalyAnalyzer analyzer = CreateAnalyzer(handler);
+        using MemoryStream imageStream = new([1]);
+
+        InferenceUnavailableException exception =
+            await Assert.ThrowsAsync<InferenceUnavailableException>(() =>
+                analyzer.AnalyzeAsync(
+                    new ImageAnalysisInput(imageStream, "image/png"),
+                    CancellationToken.None));
+
+        Assert.Equal(
+            "The Python inference service returned an invalid response.",
+            exception.Message);
+    }
+
+    [Fact]
+    public async Task MissingHeatmapIsMappedToUnavailableException()
+    {
+        StubHttpMessageHandler handler = new((_, _) =>
+        {
+            HttpResponseMessage response = new(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new
+                {
+                    modelId = "mvtec-ad-capsule-320",
+                    category = "capsule",
+                    score = 4.992109,
+                    threshold = 2.501822,
+                    isAnomalous = true
                 })
             };
 

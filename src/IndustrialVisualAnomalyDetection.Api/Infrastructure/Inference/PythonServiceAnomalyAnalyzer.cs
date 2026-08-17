@@ -84,12 +84,19 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
                     "The Python inference service returned an invalid response.");
             }
 
+            PythonHeatmapResponse heatmap = inferenceResponse.Heatmap!;
+
             return new AnomalyAnalysisResult(
                 inferenceResponse.ModelId,
                 inferenceResponse.Category,
                 inferenceResponse.Score,
                 inferenceResponse.Threshold,
-                inferenceResponse.IsAnomalous);
+                inferenceResponse.IsAnomalous,
+                new AnomalyHeatmap(
+                    heatmap.ContentType,
+                    heatmap.Width,
+                    heatmap.Height,
+                    heatmap.DataBase64));
         }
         catch (HttpRequestException exception)
         {
@@ -128,8 +135,27 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
             return false;
         }
 
-        bool expectedDecision = response.Score > response.Threshold;
+        if (!IsValid(response.Heatmap))
+        {
+            return false;
+        }
 
+        bool expectedDecision = response.Score > response.Threshold;
         return response.IsAnomalous == expectedDecision;
+    }
+
+    private static bool IsValid(PythonHeatmapResponse? heatmap)
+    {
+        if (heatmap is null
+            || !string.Equals(heatmap.ContentType, "image/png", StringComparison.OrdinalIgnoreCase)
+            || heatmap.Width <= 0
+            || heatmap.Height <= 0
+            || string.IsNullOrWhiteSpace(heatmap.DataBase64))
+        {
+            return false;
+        }
+
+        byte[] buffer = new byte[heatmap.DataBase64.Length];
+        return Convert.TryFromBase64String(heatmap.DataBase64, buffer, out _);
     }
 }

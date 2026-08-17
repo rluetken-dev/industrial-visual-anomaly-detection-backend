@@ -5,4 +5,5 @@ internal sealed record PythonInferenceResponse(
     string Category,
     double Score,
     double Threshold,
-    bool IsAnomalous);
+    bool IsAnomalous,
+    PythonHeatmapResponse? Heatmap);
