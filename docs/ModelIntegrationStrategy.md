@@ -47,7 +47,8 @@ Verified evidence includes:
 - a real MVTec AD Capsule `poke` image produced the expected anomalous result;
 - path-based and stream-based Python inference produced identical score, threshold, and decision values;
 - a real image was successfully analyzed through the complete Python-service-to-backend flow;
-- the end-to-end result included model identity, category, score, threshold, decision, processing time, and trace identifier.
+- the end-to-end result included model identity, category, score, threshold, decision, processing time, trace identifier, and a Base64-encoded PNG heatmap;
+- the heatmap returned through the backend was decoded into a readable `320 × 320` PNG and visually inspected.
 
 The selected approach therefore has stronger implementation and parity evidence than the alternatives for the current model format.
 
@@ -89,7 +90,7 @@ The selected boundary must:
 2. keep public clients independent from Python and PyTorch;
 3. keep controllers independent from runtime-specific details;
 4. accept validated image streams without temporary backend files;
-5. return model identity, category, score, threshold, and decision;
+5. return model identity, category, score, threshold, decision, and model-generated heatmap data;
 6. support cancellation and bounded adapter execution;
 7. expose lightweight dependency health;
 8. translate internal failures into stable backend outcomes;
@@ -120,6 +121,7 @@ AnomalyAnalysisResult
 - anomaly score
 - decision threshold
 - anomalous decision
+- PNG anomaly heatmap
 ```
 
 The boundary deliberately excludes:
@@ -183,9 +185,17 @@ Successful response:
   "category": "capsule",
   "score": 4.992109298706055,
   "threshold": 2.501821517944336,
-  "isAnomalous": true
+  "isAnomalous": true,
+  "heatmap": {
+    "contentType": "image/png",
+    "width": 320,
+    "height": 320,
+    "dataBase64": "<base64-encoded PNG>"
+  }
 }
 ```
+
+The Python runtime generates the heatmap from threshold-normalized patch scores and encodes it as an RGB PNG. The internal response requires heatmap media type, positive dimensions, and non-empty Base64 data.
 
 Unreadable decoded image content returns HTTP `400 Bad Request` from Python. Other runtime failures are not exposed directly to public clients; the backend maps them into its own stable error boundary.
 
@@ -207,8 +217,8 @@ For each analysis it:
 8. maps Python HTTP `400` to an invalid decoded image failure;
 9. rejects other unsuccessful statuses as inference unavailable;
 10. deserializes the internal response;
-11. validates all returned values;
-12. constructs `AnomalyAnalysisResult`.
+11. validates scalar result values and the required heatmap payload;
+12. constructs `AnomalyHeatmap` and `AnomalyAnalysisResult`.
 
 The adapter validates that:
 
@@ -216,7 +226,11 @@ The adapter validates that:
 - category is non-empty;
 - score is finite and non-negative;
 - threshold is finite and non-negative;
-- `isAnomalous` equals the result of `score > threshold`.
+- `isAnomalous` equals the result of `score > threshold`;
+- heatmap is present;
+- heatmap content type is `image/png`;
+- heatmap width and height are positive;
+- heatmap data is non-empty and valid Base64.
 
 This validation treats the Python service as an internal dependency while still preventing corrupt or incompatible service output from crossing into the public contract.
 
@@ -304,7 +318,7 @@ Artifact metadata currently captures model behavior such as:
 
 These details remain inside the Python runtime unless a specific public API requirement justifies exposing one of them.
 
-The backend receives only the model identifier, category, score, threshold, and decision required for the client-neutral result.
+The backend receives only the model identifier, category, score, threshold, decision, and generated heatmap required for the client-neutral result. It does not inspect artifact internals or reproduce heatmap generation.
 
 ## Artifact Distribution
 
@@ -336,6 +350,9 @@ The integration separates internal runtime failures from public backend errors.
 | Missing model ID or category | Inference unavailable, HTTP `503` |
 | Negative or non-finite numeric result | Inference unavailable, HTTP `503` |
 | Inconsistent decision | Inference unavailable, HTTP `503` |
+| Missing heatmap | Inference unavailable, HTTP `503` |
+| Invalid heatmap media type or dimensions | Inference unavailable, HTTP `503` |
+| Missing or invalid heatmap Base64 data | Inference unavailable, HTTP `503` |
 | Caller cancellation | Propagated cancellation |
 
 Public errors do not expose the Python service URL, local artifact path, command line, Python traceback, or raw loader exception.
@@ -417,7 +434,9 @@ Python tests verify:
 - liveness;
 - multipart prediction;
 - unreadable image handling;
-- path-versus-stream inference parity.
+- path-versus-stream inference parity;
+- threshold-normalized PNG heatmap encoding;
+- prediction-response heatmap transport.
 
 ### Backend Repository
 
@@ -432,7 +451,10 @@ Backend tests verify:
 - dynamic readiness;
 - public error mapping;
 - configuration validation;
-- public analysis contract.
+- public analysis contract;
+- internal heatmap-response validation;
+- `AnomalyHeatmap` invariants;
+- public heatmap response mapping.
 
 ### End-to-End Verification
 
@@ -445,7 +467,7 @@ Capsule poke image
     -> ASP.NET Core /api/v1/analyses
     -> Python /api/v1/predictions
     -> mvtec-ad-capsule-320 artifact
-    -> anomalous response
+	-> anomalous response with PNG heatmap
 ```
 
 The measured local result included approximately 1.7 seconds of backend processing for the verified anomalous example. This is evidence from one development environment, not a guaranteed latency target.
@@ -527,10 +549,10 @@ Possible later improvements include:
 - measured worker and process scaling;
 - bounded request queues and explicit overload behavior;
 - production metrics and tracing;
-- localization or heatmap support;
+- additional localization forms such as overlays, masks, regions, or raw patch scores;
 - multi-category model routing.
 
-These are not required for the initial web client.
+These are not required for the current backend and desktop-client baseline.
 
 ## Decision Record
 
@@ -548,7 +570,8 @@ These are not required for the initial web client.
 | Timeout mapping | Backend HTTP `503` |
 | Artifact distribution | Local export required until separately approved |
 | Decision status | Implemented and end-to-end verified |
-| Last reviewed | 2026-08-15 |
+| Localization transport | Base64-encoded RGB PNG heatmap |
+| Last reviewed | 2026-08-18 |
 
 ## Related Documentation
 
@@ -560,4 +583,4 @@ These are not required for the initial web client.
 
 ## Last Updated
 
-2026-08-15
+2026-08-18

@@ -160,11 +160,12 @@ Implemented by:
 - `IAnomalyAnalyzer`;
 - `ImageAnalysisInput`;
 - `AnomalyAnalysisResult`;
+- `AnomalyHeatmap`;
 - typed analysis exceptions.
 
-`IAnomalyAnalyzer` is the stable application-level boundary consumed by the controller. It accepts validated image content and returns model identity, category, score, threshold, and decision without exposing HTTP, FastAPI, PyTorch, or artifact-layout details.
+`IAnomalyAnalyzer` is the stable application-level boundary consumed by the controller. It accepts validated image content and returns model identity, category, score, threshold, decision, and a model-generated heatmap without exposing HTTP, FastAPI, PyTorch, or artifact-layout details.
 
-`ImageAnalysisInput` and `AnomalyAnalysisResult` enforce their own null and value invariants. This prevents invalid state from silently crossing application boundaries.
+`ImageAnalysisInput`, `AnomalyAnalysisResult`, and `AnomalyHeatmap` enforce their own null and value invariants. This prevents invalid state from silently crossing application boundaries.
 
 ### Application Health Boundary
 
@@ -184,6 +185,7 @@ Responsibilities:
 - apply the configured `HttpClient` timeout;
 - deserialize and validate the Python response;
 - reject missing, malformed, non-finite, negative, or logically inconsistent values;
+- validate required heatmap metadata, dimensions, media type, and Base64 representation;
 - convert a valid service response into `AnomalyAnalysisResult`;
 - translate transport, timeout, JSON, service-status, and decoded-image failures into typed application exceptions.
 
@@ -303,10 +305,10 @@ The implemented analysis flow is:
 6. the controller opens the validated upload stream and creates `ImageAnalysisInput`;
 7. `IAnomalyAnalyzer` dispatches to `PythonServiceAnomalyAnalyzer`;
 8. the adapter posts the image to the Python prediction endpoint;
-9. the Python service decodes and preprocesses the image, executes inference, and returns its result;
-10. the adapter validates the returned contract and creates `AnomalyAnalysisResult`;
-11. the controller maps the result to `AnalysisResponse`;
-12. the backend returns the result with processing time and trace identifier.
+9. the Python service decodes and preprocesses the image, executes inference, generates a threshold-normalized PNG heatmap, and returns its result;
+10. the adapter validates the scalar result and heatmap payload and creates `AnomalyAnalysisResult`;
+11. the controller maps the application result and `AnomalyHeatmap` into the public `AnalysisResponse`;
+12. the backend returns the result, Base64-encoded heatmap, processing time, and trace identifier.
 
 Raw image bytes are not persisted or logged by the backend.
 
@@ -327,6 +329,7 @@ Failures are handled at the boundary where they become known.
 - Python service unavailable: `503 Service Unavailable`;
 - Python request exceeds the configured adapter timeout: `503 Service Unavailable`;
 - Python returns malformed or inconsistent JSON: `503 Service Unavailable`;
+- Python omits the required heatmap or returns invalid heatmap metadata or Base64 data: `503 Service Unavailable`;
 - Python returns another unsuccessful service status: `503 Service Unavailable`.
 
 Caller cancellation is propagated through the asynchronous call chain and is not deliberately converted into a service-unavailable response.
@@ -359,11 +362,12 @@ The Python runtime remains authoritative for:
 - patch-score aggregation;
 - threshold selection;
 - normal-versus-anomalous decision logic;
-- model and category identity.
+- model and category identity;
+- patch-score localization and heatmap generation.
 
-The backend validates that a received score and threshold are finite and non-negative and that the returned decision is consistent with `score > threshold`. It does not recalculate the model output independently.
+The backend validates that a received score and threshold are finite and non-negative and that the returned decision is consistent with `score > threshold`. It also validates the required heatmap metadata, positive dimensions, PNG media type, and Base64 representation. It does not recalculate scores, thresholds, decisions, or localization data independently.
 
-The current public backend response does not expose patch maps or heatmaps.
+The public response exposes the model-generated heatmap as a Base64-encoded PNG. It does not expose raw patch scores, masks, regions, bounding boxes, or a pre-blended overlay.
 
 ## Request and Correlation Identity
 
@@ -424,7 +428,8 @@ Unit tests cover:
 - Python adapter request and response behavior;
 - Python health probing;
 - exception and invariant enforcement;
-- response consistency rules.
+- response consistency rules;
+- anomaly heatmap invariants and Python heatmap-response validation.
 
 ### Integration Tests
 
@@ -436,13 +441,14 @@ Integration tests cover:
 - dependency registration and options binding;
 - startup configuration validation;
 - CORS behavior;
-- OpenAPI request and response metadata.
+- OpenAPI request and response metadata;
+- public heatmap response mapping.
 
 The normal backend test suite uses controlled HTTP handlers and test hosts. It does not require MVTec datasets, a feature memory, or a running Python service.
 
 ### End-to-End Verification
 
-`scripts/verify-local-stack.ps1` performs manual local verification across the real Python service and backend. An optional image exercises the complete analysis path.
+`scripts/verify-local-stack.ps1` performs manual local verification across the real Python service and backend. An optional image exercises the complete analysis path. The heatmap transport has additionally been verified manually by decoding the backend response into a readable PNG.
 
 This end-to-end check complements automated CI but is not part of ordinary backend CI because the large external model artifact is intentionally not stored in the repository.
 
@@ -465,7 +471,6 @@ The current architecture does not require:
 - direct .NET model inference;
 - Python child-process management by the backend;
 - multiple active model versions or category routing;
-- heatmap transport through the public contract;
 - batch inference;
 - production camera or PLC integration;
 - container orchestration.
@@ -475,7 +480,7 @@ These components should be introduced only after an explicit, verified requireme
 ## Remaining Architecture Decisions
 
 - client-side workflow and presentation boundaries;
-- whether localization data belongs in a future public response;
+- whether additional localization forms such as overlays, masks, regions, or raw patch scores belong in a future public response;
 - artifact distribution and deployment packaging;
 - Docker Compose topology for the complete stack;
 - production service-to-service security;
@@ -494,4 +499,4 @@ None of these decisions blocks initial web-client development against the curren
 
 ## Last Updated
 
-2026-08-15
+2026-08-18

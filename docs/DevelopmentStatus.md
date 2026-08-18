@@ -8,11 +8,13 @@ It is intentionally concise. Stable requirements belong in `ProjectSpecification
 
 ## Current Phase
 
-**Backend integration baseline complete**
+**Backend heatmap contract complete**
 
-The backend is ready to serve as the stable HTTP boundary for initial web-client development. It validates uploaded images, delegates inference to the Python model service, maps results and failures into the public API contract, and reports dependency-aware readiness.
+The backend provides the stable HTTP boundary used by the desktop client. It validates uploaded images, delegates inference and heatmap generation to the Python model service, validates and maps returned results, and reports dependency-aware readiness.
 
-Further backend work should now be driven by concrete client, deployment, or operational requirements rather than speculative expansion.
+The model-generated PNG heatmap is now transported through the public analysis response and has been verified through the complete local stack.
+
+Further backend work should be driven by concrete client, deployment, or operational requirements rather than speculative expansion.
 
 ## Verified Environment
 
@@ -24,7 +26,8 @@ Further backend work should now be driven by concrete client, deployment, or ope
 - Debug and Release solution builds succeed;
 - all automated unit and integration tests succeed;
 - GitHub Actions CI succeeds on `main`;
-- the complete local Python-service-to-backend analysis flow has been verified with a real MVTec AD image.
+- the complete local Python-service-to-backend analysis flow has been verified with a real MVTec AD image;
+- the backend heatmap response was decoded into a readable `320 × 320` PNG and visually inspected.
 
 ## Implemented
 
@@ -46,7 +49,7 @@ Further backend work should now be driven by concrete client, deployment, or ope
 - dependency-aware readiness endpoint implemented at `GET /health/ready`;
 - versioned analysis endpoint implemented at `POST /api/v1/analyses`;
 - multipart image-upload contract implemented;
-- response contract includes model identity, category, score, threshold, decision, processing time, and trace ID;
+- response contract includes model identity, category, score, threshold, decision, processing time, trace ID, and a Base64-encoded PNG heatmap;
 - route-based API version identifier established through `/api/v1`;
 - OpenAPI document exposed in the Development environment;
 - analysis operation ID, summary, description, multipart request, and binary image schema verified by automated tests.
@@ -68,6 +71,8 @@ Further backend work should now be driven by concrete client, deployment, or ope
 - concrete HTTP adapter implemented for the Python FastAPI inference service;
 - backend sends the validated image as multipart form data;
 - Python inference responses validated before they enter the public API contract;
+- required heatmap metadata, dimensions, PNG media type, and Base64 representation validated;
+- internal heatmap data mapped through `AnomalyHeatmap` into the public response contract;
 - invalid or unavailable inference responses mapped to controlled failures;
 - configurable service base URL, prediction path, health path, and timeout implemented;
 - inference-service health probe implemented;
@@ -81,8 +86,8 @@ Further backend work should now be driven by concrete client, deployment, or ope
 - invalid decoded image content mapped to `400 Bad Request`;
 - validation failures returned with controlled status codes and messages;
 - trace identifier included in Problem Details responses;
-- `X-Correlation-ID` accepted and propagated when valid;
-- generated trace identifier used when the caller supplies none;
+- ASP.NET Core trace identifier forwarded to the Python service as `X-Correlation-ID`;
+- backend-owned trace identifier included in successful responses, errors, and structured logs;
 - structured analysis logging added without logging raw image content;
 - processing time included in successful analysis responses;
 - constructor dependencies and domain inputs protected by explicit null and invariant checks.
@@ -99,13 +104,14 @@ Further backend work should now be driven by concrete client, deployment, or ope
 
 ### Testing and Local Verification
 
-- unit tests cover image validation, inference response handling, health probing, exceptions, and domain invariants;
-- integration tests cover health endpoints, analysis behavior, Problem Details, startup options, CORS, and OpenAPI;
+- unit tests cover image validation, inference response handling, heatmap validation, health probing, exceptions, and domain invariants;
+- integration tests cover health endpoints, analysis behavior, public heatmap mapping, Problem Details, startup options, CORS, and OpenAPI;
 - backend tests run without a dataset or real model artifact;
 - `scripts/verify-local-stack.ps1` verifies Python liveness, backend liveness, and backend readiness;
 - the verification script optionally submits a real image through the backend analysis endpoint;
 - a real Capsule `poke` image was classified as anomalous through the complete local stack;
-- the verified response contained the expected model identity, category, score, threshold, decision, processing time, and trace ID.
+- the verified response contained the expected model identity, category, score, threshold, decision, processing time, trace ID, and PNG heatmap;
+- the backend heatmap payload was decoded into a readable image whose strongest response corresponded visually to the damaged Capsule area.
 
 ### Documentation
 
@@ -202,7 +208,7 @@ Content-Type: multipart/form-data
 Form field: image
 ```
 
-The endpoint accepts a validated PNG or JPEG image and returns the mapped anomaly-analysis result. The verified local integration uses the Python service at `http://127.0.0.1:8000` and the backend HTTPS profile at `https://localhost:7056`.
+The endpoint accepts a validated PNG or JPEG image and returns the mapped anomaly-analysis result together with a Base64-encoded PNG heatmap. The verified local integration uses the Python service at `http://127.0.0.1:8000` and the backend HTTPS profile at `https://localhost:7056`.
 
 ## Selected Model-Integration Boundary
 
@@ -231,27 +237,26 @@ Backend unit and integration tests do not require this external runtime.
 The following items are deliberately deferred and do not block initial frontend development:
 
 - web-client implementation;
-- desktop-client implementation;
 - Docker and Docker Compose packaging;
 - production deployment configuration;
 - production monitoring, metrics, tracing backend, and alerting;
 - rate limiting and other deployment-specific abuse controls;
 - authentication and authorization;
 - persistence and analysis history;
-- heatmap transport through the public backend contract;
 - batch analysis;
 - model selection across multiple artifacts or categories;
 - an approved model-artifact distribution mechanism;
-- performance and load testing under deployment-like conditions.
+- performance and load testing under deployment-like conditions;
+- additional localization forms such as overlays, masks, regions, or raw patch scores.
 
 These capabilities should be added only when a verified product or deployment requirement justifies them.
 
 ## Immediate Next Steps
 
-1. synchronize the remaining backend documentation with the completed integration baseline;
-2. preserve the current API contract while implementing the first web client;
-3. add only backend changes that are required by verified client integration needs;
-4. perform another complete end-to-end verification after the first client flow is implemented;
+1. complete and commit the backend documentation update for the heatmap milestone;
+2. preserve the current API contract while the desktop client adds heatmap presentation;
+3. add backend changes only when required by verified client integration needs;
+4. perform another complete end-to-end verification after desktop heatmap display is implemented;
 5. evaluate Docker Compose and deployment documentation after the model service, backend, and client are stable together.
 
 ## Verification Commands
@@ -302,4 +307,4 @@ Do not record planned behavior as implemented. Avoid fixed automated-test counts
 
 ## Last Updated
 
-2026-08-15
+2026-08-18

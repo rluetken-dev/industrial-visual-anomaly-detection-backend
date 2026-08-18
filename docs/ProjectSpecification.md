@@ -10,7 +10,7 @@ Implementation progress belongs in `DevelopmentStatus.md`. HTTP contracts belong
 
 The project provides a client-neutral ASP.NET Core backend for industrial visual anomaly detection.
 
-The backend accepts inspection images, applies bounded upload validation, coordinates inference through an internal Python service, and returns a consistent anomaly-analysis result to web and desktop clients.
+The backend accepts inspection images, applies bounded upload validation, coordinates inference and heatmap generation through an internal Python service, and returns a consistent anomaly-analysis result with a model-generated PNG heatmap to web and desktop clients.
 
 ```text
 Web client -------+
@@ -33,6 +33,7 @@ The first backend milestone is complete. The verified baseline includes:
 - file and request-size limits;
 - Python FastAPI inference integration over HTTP;
 - stable success and Problem Details contracts;
+- Base64-encoded PNG heatmap transport in successful analysis responses;
 - structured logging and trace identifiers;
 - validated startup options and configurable CORS;
 - Development OpenAPI document;
@@ -40,7 +41,7 @@ The first backend milestone is complete. The verified baseline includes:
 - GitHub Actions CI;
 - documented local setup and end-to-end verification.
 
-The backend is ready to support the first web client. Further work should be driven by verified client, deployment, or operational requirements.
+The backend supports the current desktop client and remains suitable for a future web client. Further work should be driven by verified client, deployment, or operational requirements.
 
 ## Goals
 
@@ -49,6 +50,7 @@ The backend is ready to support the first web client. Further work should be dri
 - keep model execution behind replaceable application abstractions;
 - validate uploads before delegating decoding and inference;
 - return understandable decisions and diagnostics;
+- transport model-generated heatmaps without reproducing localization logic in .NET;
 - report model identity and category;
 - distinguish process liveness from inference readiness;
 - provide controlled errors without exposing internals;
@@ -63,7 +65,7 @@ The current backend does not:
 - download or redistribute datasets;
 - generate model artifacts;
 - classify the exact defect type;
-- expose heatmaps or localization through the public API;
+- expose raw patch scores, segmentation masks, defect regions, bounding boxes, or pre-blended overlays;
 - process video, camera streams, or batches;
 - integrate directly with machinery or PLCs;
 - make certified production decisions;
@@ -87,7 +89,7 @@ These items may become future requirements but are not implied by the baseline.
 - communicate with the configured Python service;
 - validate internal inference responses;
 - translate results and failures into public contracts;
-- report model identity, category, score, threshold, decision, duration, and trace ID;
+- report model identity, category, score, threshold, decision, duration, trace ID, and Base64-encoded PNG heatmap;
 - supply OpenAPI and configurable CORS;
 - avoid image persistence and sensitive logging by default.
 
@@ -110,7 +112,8 @@ These items may become future requirements but are not implied by the baseline.
 - present results and errors understandably;
 - call the backend rather than Python directly;
 - avoid duplicating preprocessing or decision logic;
-- tolerate new optional version 1 response fields.
+- tolerate additive version 1 response fields and ignore unknown JSON properties;
+- decode and present the returned PNG heatmap when localization visualization is required;
 
 ### Deployment Responsibilities
 
@@ -154,6 +157,9 @@ These items may become future requirements but are not implied by the baseline.
 - `FR-034` Processing time shall be non-negative and expressed in milliseconds.
 - `FR-035` A non-empty backend trace identifier shall be returned.
 - `FR-036` Clients shall treat the returned decision as authoritative.
+- `FR-037` A successful response shall include one model-generated heatmap.
+- `FR-038` The heatmap shall identify `image/png` as its media type.
+- `FR-039` Heatmap width and height shall be positive, and its image data shall be non-empty valid Base64.
 
 ### Model Integration
 
@@ -163,7 +169,7 @@ These items may become future requirements but are not implied by the baseline.
 - `FR-043` The adapter shall send the image as multipart form data.
 - `FR-044` The adapter shall support caller cancellation and a configured timeout.
 - `FR-045` Python location and paths shall come from validated configuration.
-- `FR-046` The adapter shall validate identity, category, score, threshold, and decision.
+- `FR-046` The adapter shall validate identity, category, score, threshold, decision, and the required heatmap payload.
 - `FR-047` Invalid inference output shall fail closed.
 - `FR-048` The backend shall forward its trace identifier to Python.
 - `FR-049` Model execution shall remain replaceable without controller changes.
@@ -174,7 +180,7 @@ These items may become future requirements but are not implied by the baseline.
 - `FR-061` Python shall reuse the loaded artifact and extractor.
 - `FR-062` Python shall expose lightweight liveness.
 - `FR-063` Python shall expose a versioned single-image prediction endpoint.
-- `FR-064` Python shall return model ID, category, score, threshold, and decision.
+- `FR-064` Python shall return model ID, category, score, threshold, decision, and a threshold-normalized RGB PNG heatmap.
 - `FR-065` Unreadable image content shall produce controlled HTTP `400`.
 - `FR-066` Runtime configuration shall use environment configuration rather than committed paths.
 
@@ -208,12 +214,19 @@ These items may become future requirements but are not implied by the baseline.
 - `FR-094` The two-service startup sequence shall be documented.
 - `FR-095` A script shall verify Python liveness, backend liveness, and readiness.
 - `FR-096` The script shall optionally submit a real image.
+- `FR-097` OpenAPI shall describe the structured analysis response including the heatmap payload.
 
 ## Public Analysis Result
 
-The stable API version 1 result contains model identifier, model category, anomaly score, decision threshold, normal-or-anomalous decision, backend processing duration in milliseconds, and backend trace identifier.
+The stable API version 1 result contains model identifier, model category, anomaly score, decision threshold, normal-or-anomalous decision, backend processing duration in milliseconds, backend trace identifier, and a model-generated heatmap.
 
-The exact JSON schema is defined in `ApiContract.md`. Localization, patch maps, masks, heatmaps, and region lists are not part of the current result.
+The heatmap is represented by:
+
+- media type `image/png`;
+- positive pixel width and height;
+- non-empty Base64-encoded image data.
+
+The exact JSON schema is defined in `ApiContract.md`. Raw patch scores, masks, regions, bounding boxes, and pre-blended overlays are not part of the current result.
 
 ## Non-Functional Requirements
 
@@ -248,6 +261,7 @@ The exact JSON schema is defined in `ApiContract.md`. Localization, patch maps, 
 - `NFR-033` Invalid configuration shall fail fast.
 - `NFR-034` Artifact loading shall occur during Python startup, not per request.
 - `NFR-035` Backend tests shall not depend on external services or large artifacts.
+- `NFR-036` Missing or structurally invalid heatmap output shall fail closed.
 
 ### Observability, Performance, and Reproducibility
 
@@ -321,16 +335,18 @@ The first backend milestone is accepted because:
 - inference uses application abstractions;
 - the Python adapter is implemented and tested;
 - service output is validated;
+- a model-generated heatmap is transported through the public response;
+- the backend heatmap payload has been decoded into a readable `320 × 320` PNG and visually inspected;
 - normal and anomalous reference cases agree with Python;
 - a real image passed through the complete stack;
 - OpenAPI describes the upload contract;
 - setup and verification are documented.
 
-The backend is ready for initial web-client work. The client must configure its browser origin, submit PNG or JPEG images, and map all documented outcomes.
+The backend supports the current desktop-client workflow and is ready for future web-client integration. Clients submit PNG or JPEG images, map all documented outcomes, and may decode the returned heatmap for visualization.
 
 ## Deferred Requirements
 
-- localization or heatmap responses;
+- additional localization forms such as overlays, masks, regions, bounding boxes, or raw patch scores;
 - caller-selectable model or category;
 - approved artifact distribution;
 - Docker and Docker Compose;
@@ -344,7 +360,7 @@ The backend is ready for initial web-client work. The client must configure its 
 - camera, PLC, or device integration;
 - direct .NET inference.
 
-Deferred decisions are not commitments and do not block the first web client.
+Deferred decisions are not commitments and do not block the current desktop-client workflow or future web-client development.
 
 ## Change Control
 
@@ -368,4 +384,4 @@ Deferred decisions are not commitments and do not block the first web client.
 
 ## Last Updated
 
-2026-08-15
+2026-08-18
