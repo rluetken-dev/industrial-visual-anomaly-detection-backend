@@ -4,85 +4,81 @@
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Release](https://img.shields.io/github/v/release/rluetken-dev/industrial-visual-anomaly-detection-backend)](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/releases/latest)
 
-ASP.NET Core backend for industrial visual anomaly detection, secure image-upload validation, Python model-service orchestration, and client-neutral API integration.
+ASP.NET Core backend for industrial visual anomaly detection, secure image-upload validation, selectable Python inference models, and client-neutral API integration.
 
-The backend provides a stable HTTP boundary for web and desktop clients. Model development, evaluation, artifact export, and the internal inference runtime remain in the separate [Python model repository](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model).
+The backend provides the public HTTP boundary for desktop and future web clients. Model development, registry validation, artifact loading, and inference execution remain in the separate [Python model repository](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model).
 
-> **Current status:** The .NET 10 backend foundation, health checks, image-analysis endpoint, upload validation, Python inference adapter, anomaly heatmap transport, readiness probing, OpenAPI contract, automated tests, CI, and local stack verification are implemented.
+> **Current status:** The .NET 10 backend foundation, health checks, public model catalog, model-specific image analysis, upload validation, Python inference adapters, heatmap transport, readiness probing, OpenAPI contract, automated tests, CI, and local multi-model stack verification are implemented.
 
 ## Features
 
-- versioned image-analysis API;
-- PNG and JPEG upload validation by size, media type, and file signature;
+- versioned model-catalog and image-analysis APIs;
+- discovery of available inference models through the Python service;
+- optional per-request model selection through `modelId`;
+- forwarding of selected model identifiers to Python;
+- compatibility with clients that omit a model identifier;
+- PNG and JPEG validation by size, media type, and signature;
 - bounded multipart request handling;
-- Python inference integration through a dedicated HTTP adapter;
 - liveness and dependency-aware readiness endpoints;
-- anomaly score, threshold, decision, model identity, processing time, trace ID, and Base64-encoded PNG heatmap responses;
-- Problem Details responses for validation and inference failures;
-- backend trace-ID propagation to the Python service through `X-Correlation-ID`;
+- anomaly score, threshold, decision, model identity, processing time, trace ID, and Base64 PNG heatmap responses;
+- Problem Details for validation and inference failures;
+- trace-ID propagation through `X-Correlation-ID`;
+- configurable Python catalog, prediction, and health paths;
 - configurable CORS policy;
-- generated OpenAPI document in the Development environment;
+- Development OpenAPI document;
 - unit and integration tests;
-- GitHub Actions build and test workflow;
-- PowerShell verification of the complete local stack.
+- GitHub Actions CI;
+- verified native desktop and Docker Compose integration.
 
 ## System Overview
 
 ```text
-Web/Desktop client
+Desktop or future web client
         |
+        | GET models / POST analysis
         v
 ASP.NET Core backend
         |
+        | catalog provider + anomaly analyzer
         v
-Application inference abstraction
+Python HTTP inference adapters
         |
-        v
-Python HTTP inference adapter
-        |
+        | GET models / POST prediction + modelId
         v
 FastAPI inference service
         |
         v
-Exported PyTorch model artifact
+Model registry and selected loaded artifact
 ```
 
-The backend does not contain model-development logic or load PyTorch artifacts directly. This separation keeps the public API independent from the Python runtime and allows the inference implementation to evolve behind a stable contract.
+The backend does not contain model-development logic, read `models.json`, or load PyTorch artifacts. Python remains authoritative for enabled models, default selection, artifact metadata, and inference execution. The backend validates and maps those internal contracts into stable public responses.
 
 ## Technology
 
 - .NET 10
 - ASP.NET Core Web API with controllers
-- `HttpClient`-based Python service integration
-- built-in dependency injection, configuration, options validation, Problem Details, CORS, and OpenAPI
+- `HttpClient`-based Python integration
+- dependency injection, configuration, options validation, Problem Details, CORS, and OpenAPI
 - xUnit and `Microsoft.AspNetCore.Mvc.Testing`
 - GitHub Actions
-- PowerShell local verification
+- PowerShell verification
 
 ## Repository Structure
 
 ```text
 industrial-visual-anomaly-detection-backend/
-|-- .github/
-|   `-- workflows/
-|       `-- ci.yml
+|-- .github/workflows/ci.yml
 |-- docs/
 |   |-- ApiContract.md
 |   |-- ArchitectureOverview.md
 |   |-- DevelopmentStatus.md
 |   |-- ModelIntegrationStrategy.md
 |   `-- ProjectSpecification.md
-|-- scripts/
-|   `-- verify-local-stack.ps1
-|-- src/
-|   `-- IndustrialVisualAnomalyDetection.Api/
-|-- tests/
-|   `-- IndustrialVisualAnomalyDetection.Api.Tests/
-|       |-- Integration/
-|       `-- Unit/
-|-- .editorconfig
-|-- .gitattributes
-|-- .gitignore
+|-- scripts/verify-local-stack.ps1
+|-- src/IndustrialVisualAnomalyDetection.Api/
+|-- tests/IndustrialVisualAnomalyDetection.Api.Tests/
+|   |-- Integration/
+|   `-- Unit/
 |-- COMMITS.md
 |-- IndustrialVisualAnomalyDetection.slnx
 `-- README.md
@@ -97,96 +93,90 @@ For the backend alone:
 
 For complete local inference:
 
-- Python 3.12
-- the cloned Python model repository;
-- an exported compatible model artifact;
+- Python 3.12;
+- model/inference service `v0.6.0` or a compatible later release;
+- one or more compatible local model artifacts;
+- a model registry for multi-model mode;
 - an image to analyze.
 
-Verify the main tools:
-
-```powershell
-dotnet --version
-python --version
-git --version
-```
-
-## Clone the Repositories
-
-Keep the backend and model repositories as separate sibling directories:
-
-```powershell
-git clone https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend.git
-git clone https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model.git
-```
-
-Example layout:
-
-```text
-projects/
-|-- industrial-visual-anomaly-detection-backend/
-`-- industrial-visual-anomaly-detection-model/
-```
-
-## Build and Test the Backend
+## Build and Test
 
 From the backend repository root:
 
 ```powershell
 dotnet restore .\IndustrialVisualAnomalyDetection.slnx
-dotnet build .\IndustrialVisualAnomalyDetection.slnx
-dotnet test .\IndustrialVisualAnomalyDetection.slnx --no-build
+dotnet build .\IndustrialVisualAnomalyDetection.slnx --configuration Release
+dotnet test .\IndustrialVisualAnomalyDetection.slnx --configuration Release --no-build
 ```
 
-The ordinary backend test suite uses controlled test doubles and does not require a running Python service, a dataset, or a model artifact.
+The backend tests use controlled doubles and do not require a running Python service, dataset, registry, or artifact.
 
 ## Prepare the Python Model Service
 
-From the model repository root, create its virtual environment and install the dependencies:
+Clone and install the model repository separately:
 
 ```powershell
-python -m venv .venv
+git clone https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model.git
+Set-Location .\industrial-visual-anomaly-detection-model
+git checkout v0.6.0
 
+python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
 .\.venv\Scripts\python.exe -m pip install -r .\requirements.txt
 .\.venv\Scripts\python.exe -m pip install --editable .
 ```
 
-### Model Artifact Requirement
+Model artifacts and registries are intentionally excluded from Git. Create compatible artifacts by following the model-repository documentation and retain all dataset license obligations.
 
-Model artifacts are intentionally excluded from Git. The verified Capsule artifact contains a large feature memory and depends on MVTec AD data, whose redistribution terms must be considered separately.
+### Registry Layout
 
-At present, create the artifact locally from your own MVTec AD copy. Download [MVTec AD](https://www.mvtec.com/research-teaching/datasets/mvtec-ad), extract it outside both repositories, and run:
-
-```powershell
-.\.venv\Scripts\python.exe .\scripts\export_mvtec_ad_model.py `
-    --dataset-root C:\path\to\mvtec-ad `
-    --manifest .\configs\splits\mvtec-ad-capsule-seed-42.json `
-    --output-directory .\outputs\model-artifacts\mvtec-ad-capsule-320 `
-    --input-size 320 `
-    --top-fraction 0.01 `
-    --memory-fraction 1.0 `
-    --sampling-seed 42
-```
-
-The resulting directory contains:
+Example local layout:
 
 ```text
-metadata.json
-feature_memory.pt
+outputs/model-artifacts/
+|-- models.json
+|-- mvtec-ad-capsule-320/
+|   |-- metadata.json
+|   `-- feature_memory.pt
+`-- visa-cashew-generalized-q95-320/
+    |-- metadata.json
+    `-- feature_memory.pt
 ```
 
-The complete feature memory is approximately 410 MiB. Artifact export and threshold calculation can take some time on CPU.
+Example `models.json`:
 
-## Start the Complete Local Stack
+```json
+{
+  "schemaVersion": 1,
+  "defaultModelId": "mvtec-ad-capsule-320",
+  "models": [
+    {
+      "id": "mvtec-ad-capsule-320",
+      "displayName": "MVTec AD - Capsule",
+      "artifactDirectory": "mvtec-ad-capsule-320",
+      "enabled": true
+    },
+    {
+      "id": "visa-cashew-generalized-q95-320",
+      "displayName": "VisA - Cashew",
+      "artifactDirectory": "visa-cashew-generalized-q95-320",
+      "enabled": true
+    }
+  ]
+}
+```
 
-Use three terminals: one for the Python service, one for the backend, and one for verification commands. Keep the first two processes running.
+## Start the Complete Local Workflow
 
-### 1. Start the Python Inference Service
+Use separate terminals for Python, the backend, and verification.
 
-In the model repository:
+### 1. Start Python in Multi-Model Mode
+
+From the model repository:
 
 ```powershell
-$env:IVAD_MODEL_ARTIFACT = "$PWD\outputs\model-artifacts\mvtec-ad-capsule-320"
+$env:IVAD_MODEL_REGISTRY = "$PWD\outputs\model-artifacts\models.json"
+Remove-Item Env:IVAD_MODEL_ARTIFACT -ErrorAction SilentlyContinue
 $env:IVAD_MEMORY_CHUNK_SIZE = "4096"
 
 .\.venv\Scripts\python.exe -m uvicorn `
@@ -195,15 +185,11 @@ $env:IVAD_MEMORY_CHUNK_SIZE = "4096"
     --port 8000
 ```
 
-The service loads the model artifact during startup. Its default liveness URL is:
+Legacy single-artifact mode remains supported through `IVAD_MODEL_ARTIFACT`. Exactly one of `IVAD_MODEL_REGISTRY` and `IVAD_MODEL_ARTIFACT` must be configured.
 
-```text
-http://127.0.0.1:8000/health/live
-```
+### 2. Start the Backend
 
-### 2. Start the ASP.NET Core Backend
-
-In the backend repository:
+From the backend repository:
 
 ```powershell
 dotnet run `
@@ -211,22 +197,20 @@ dotnet run `
     --launch-profile https
 ```
 
-The checked-in development profile uses:
+The development profile uses:
 
 ```text
 https://localhost:7056
 http://localhost:5070
 ```
 
-If the local HTTPS development certificate is not trusted yet, run:
+Trust the local certificate when necessary:
 
 ```powershell
 dotnet dev-certs https --trust
 ```
 
-### 3. Verify the Stack
-
-With both services running, execute from the backend repository:
+### 3. Verify Health
 
 ```powershell
 powershell.exe `
@@ -235,63 +219,64 @@ powershell.exe `
     -File .\scripts\verify-local-stack.ps1
 ```
 
-This checks:
-
-- Python service liveness;
-- backend liveness;
-- backend readiness.
-
-To include a real end-to-end analysis:
-
-```powershell
-powershell.exe `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File .\scripts\verify-local-stack.ps1 `
-    -ImagePath "C:\path\to\image.png"
-```
-
-The script prints the model ID, category, anomaly score, threshold, decision, processing time, and trace ID.
+The separate Docker Compose stack repository provides the preferred reproducible multi-model workflow and supports model-specific end-to-end verification.
 
 ## API Endpoints
 
 ```text
 GET  /health/live
 GET  /health/ready
+GET  /api/v1/models
 POST /api/v1/analyses
 ```
 
-### Liveness
+### Model Catalog
 
 ```powershell
-curl.exe --insecure https://localhost:7056/health/live
+Invoke-RestMethod `
+    -Uri https://localhost:7056/api/v1/models `
+    -Method Get |
+    ConvertTo-Json -Depth 5
 ```
 
-Expected response:
+Example response:
 
 ```json
 {
-  "status": "healthy"
+  "defaultModelId": "mvtec-ad-capsule-320",
+  "models": [
+    {
+      "id": "mvtec-ad-capsule-320",
+      "displayName": "MVTec AD - Capsule",
+      "category": "capsule",
+      "inputSize": 320,
+      "isDefault": true
+    },
+    {
+      "id": "visa-cashew-generalized-q95-320",
+      "displayName": "VisA - Cashew",
+      "category": "cashew",
+      "inputSize": 320,
+      "isDefault": false
+    }
+  ]
 }
 ```
 
-### Readiness
+Python is authoritative for the catalog. The backend validates and maps it without maintaining a hard-coded list.
 
-```powershell
-curl.exe --insecure https://localhost:7056/health/ready
-```
-
-The endpoint returns `200 OK` with `{"status":"ready"}` when the Python service is reachable. It returns `503 Service Unavailable` with `{"status":"not_ready"}` when the dependency is unavailable.
-
-### Analyze an Image
+### Analyze with an Explicit Model
 
 ```powershell
 curl.exe `
     --insecure `
-    -X POST `
+    --request POST `
     https://localhost:7056/api/v1/analyses `
-    -F "image=@C:\path\to\image.png;type=image/png"
+    --form "image=@C:\path\to\image.png;type=image/png" `
+    --form "modelId=mvtec-ad-capsule-320"
 ```
+
+The `modelId` field is optional for compatibility. When omitted, the Python service uses its configured default model.
 
 Example response:
 
@@ -301,11 +286,11 @@ Example response:
     "id": "mvtec-ad-capsule-320",
     "category": "capsule"
   },
-  "score": 4.992109298706055,
-  "threshold": 2.501821517944336,
+  "score": 4.992109,
+  "threshold": 2.501822,
   "decision": "anomalous",
-  "processingTimeMs": 1692,
-  "traceId": "0HNNQ2F8C9UQT:00000001",
+  "processingTimeMs": 1199,
+  "traceId": "0HNNVDI4958NA:00000001",
   "heatmap": {
     "contentType": "image/png",
     "width": 320,
@@ -315,23 +300,30 @@ Example response:
 }
 ```
 
-The heatmap is generated by the Python inference service, validated and mapped by the backend, and returned as a Base64-encoded RGB PNG. Its dimensions match the configured model input size. Clients may decode it for visualization without reproducing model-side anomaly-map processing.
+Only PNG and JPEG uploads are accepted by default. The maximum file size is 10 MiB, and the maximum multipart request body is 11 MiB.
 
-Only PNG and JPEG uploads are accepted by default. The configured maximum file size is 10 MiB, and the maximum multipart request body is 11 MiB.
+### Liveness and Readiness
+
+```powershell
+curl.exe --insecure https://localhost:7056/health/live
+curl.exe --insecure https://localhost:7056/health/ready
+```
+
+Readiness returns `200 OK` with `{"status":"ready"}` when Python is reachable and `503 Service Unavailable` with `{"status":"not_ready"}` when it is unavailable.
 
 ## OpenAPI
 
-The OpenAPI document is available in the Development environment:
+The Development OpenAPI document is available at:
 
 ```text
 https://localhost:7056/openapi/v1.json
 ```
 
-The analysis operation documents its `multipart/form-data` request, binary image field, structured analysis result, and Base64-encoded PNG heatmap response.
+It documents the catalog and analysis operations, multipart image and optional model fields, structured result, and Base64 heatmap response.
 
 ## Configuration
 
-Default configuration is stored in:
+Defaults are stored in:
 
 ```text
 src/IndustrialVisualAnomalyDetection.Api/appsettings.json
@@ -339,79 +331,70 @@ src/IndustrialVisualAnomalyDetection.Api/appsettings.json
 
 Main sections:
 
-- `ImageUpload` controls file size, request size, and allowed media types;
-- `PythonInference` controls the service URL, paths, and timeout;
-- `Cors` lists explicitly allowed client origins.
+- `ImageUpload` controls file and request limits and allowed media types;
+- `PythonInference` controls the base URL, prediction path, model-catalog path, health path, and timeout;
+- `Cors` lists explicitly allowed origins.
 
-ASP.NET Core environment variables can override individual values. Double underscores represent nested configuration keys.
-
-Example:
+Example overrides:
 
 ```powershell
 $env:PythonInference__BaseUrl = "http://127.0.0.1:8000"
+$env:PythonInference__PredictionPath = "/api/v1/predictions"
+$env:PythonInference__ModelCatalogPath = "/api/v1/models"
+$env:PythonInference__HealthPath = "/health/live"
 $env:PythonInference__TimeoutSeconds = "30"
-$env:Cors__AllowedOrigins__0 = "http://localhost:5173"
 ```
 
-Invalid upload, inference, or CORS configuration is rejected during application startup.
+Invalid upload, inference, or CORS configuration is rejected during startup. Do not commit secrets, private service addresses, machine-specific artifact locations, images, or runtime output.
 
-Do not commit secrets, private service addresses, machine-specific artifact locations, uploaded images, or generated runtime output.
+## Error Behavior
+
+- invalid uploads return stable validation Problem Details;
+- unavailable catalog or prediction dependencies map to service-unavailable behavior;
+- malformed inference catalog or prediction payloads are rejected;
+- unknown model identifiers are reported by Python and mapped through the backend failure boundary;
+- successful analysis responses always identify the model actually used.
 
 ## Request Correlation
 
-The backend uses the current ASP.NET Core trace identifier for each analysis. It forwards that value to the Python service as `X-Correlation-ID` and includes it in analysis responses, Problem Details responses, and structured logs. The current implementation does not adopt a client-supplied correlation header as its own trace identifier.
+The backend uses the current ASP.NET Core trace identifier for each analysis. It forwards that value as `X-Correlation-ID` and includes it in analysis responses, Problem Details, and structured logs. It does not adopt a client-supplied header as its trace identifier.
 
 ## Common Problems
 
 ### Backend readiness returns 503
 
-Confirm that the Python service is running and healthy:
+Confirm Python health and verify `PythonInference:BaseUrl` and `PythonInference:HealthPath`.
 
-```powershell
-Invoke-RestMethod -Uri http://127.0.0.1:8000/health/live
-```
+### Model catalog returns 503
 
-Then verify that `PythonInference:BaseUrl` points to the same address.
+Confirm that Python runs the registry-capable release, that `PythonInference:ModelCatalogPath` is `/api/v1/models`, and that the inference registry loaded successfully.
 
-### Backend port 7056 cannot be reached
+### Python startup fails
 
-The backend process is not running, a different launch profile is active, or the configured port changed. Start the backend with the `https` launch profile and use the URLs printed at startup.
+Configure exactly one of `IVAD_MODEL_REGISTRY` and `IVAD_MODEL_ARTIFACT`. In registry mode, confirm that `models.json` exists and every enabled relative artifact directory contains valid `metadata.json` and `feature_memory.pt` files.
 
-### Python service fails during startup
+### Analysis returns 400
 
-Check that `IVAD_MODEL_ARTIFACT` points to a directory containing both `metadata.json` and `feature_memory.pt`, and that the virtual environment contains all dependencies.
+Confirm that the upload is non-empty, supported, and has a matching signature. If `modelId` is supplied, it must not be blank.
+
+### Analysis fails for one selected model
+
+Retrieve `/api/v1/models` and use an enabled model ID exactly as returned. Display names and categories are not request identifiers.
 
 ### HTTPS certificate error
 
-Trust the local development certificate with `dotnet dev-certs https --trust`. For local command-line diagnostics only, `curl.exe --insecure` can bypass certificate verification.
-
-### Analysis request returns 400
-
-Confirm that the upload is non-empty, uses `image/png` or `image/jpeg`, and has a matching PNG or JPEG file signature. A renamed or unreadable file is rejected.
-
-### Analysis request returns 503 after updating one repository
-
-Confirm that the backend and Python model service use compatible contract versions. The current backend requires every successful Python prediction to include a complete Base64-encoded PNG heatmap payload.
+Trust the local development certificate with `dotnet dev-certs https --trust`. Use `curl.exe --insecure` only for local diagnostics.
 
 ## Continuous Integration
 
-The GitHub Actions workflow restores dependencies, builds the solution in Release configuration, and runs all automated tests for pushes and pull requests targeting `main`.
+GitHub Actions restores dependencies, builds the solution in Release configuration, and runs all automated tests for pushes and pull requests targeting `main`.
 
-Model artifacts and datasets are not required by backend CI.
+Model artifacts, registries, and datasets are not required by backend CI.
 
-## Related Repository
+## Related Repositories
 
-[Industrial Visual Anomaly Detection Model](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model)
-
-The model repository owns:
-
-- dataset validation and deterministic splits;
-- preprocessing and frozen feature extraction;
-- feature-memory construction and sampling;
-- anomaly scoring, evaluation, and threshold selection;
-- heatmap generation;
-- versioned artifact export and loading;
-- reference inference and the internal FastAPI service.
+- [Model and inference service](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-model)
+- [Docker Compose stack](https://github.com/rluetken-dev/industrial-visual-anomaly-detection-stack)
 
 ## Documentation
 
@@ -424,14 +407,14 @@ The model repository owns:
 
 ## Security and Privacy
 
-Uploaded images are treated as untrusted input. Request size, file size, media type, and file signature are validated before inference. Raw images are not persisted or logged by default.
+Uploaded images are untrusted input. Request size, file size, media type, and signature are validated before inference. Raw images are not persisted or logged by default.
 
-This repository does not contain datasets, generated model artifacts, secrets, or production credentials.
+The backend does not read the registry or artifacts directly. This repository contains no datasets, generated model artifacts, registries, secrets, or production credentials.
 
 ## Responsible Use
 
-This project is an experimental and educational portfolio system. It is not a certified industrial inspection system and must not autonomously make production acceptance, safety, medical, or regulatory decisions.
+This project is an experimental educational portfolio system. It is not a certified industrial inspection system and must not autonomously make production acceptance, safety, medical, or regulatory decisions.
 
 ## License
 
-No source-code license has been selected yet. Until a license is added, default copyright restrictions apply. Model artifacts, pretrained weights, datasets, and other third-party content remain subject to their own terms.
+No source-code license has been selected yet. Until a license is added, default copyright restrictions apply. Model artifacts, pretrained weights, datasets, and third-party content remain subject to their own terms.

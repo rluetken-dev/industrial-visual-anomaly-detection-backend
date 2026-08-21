@@ -42,6 +42,18 @@ public sealed class ImageAnalysisInputTests
     }
 
     [Fact]
+    public void EmptyModelIdIsRejected()
+    {
+        using MemoryStream content = new();
+
+        Assert.Throws<ArgumentException>(() =>
+            new ImageAnalysisInput(
+                content,
+                "image/png",
+                modelId: " "));
+    }
+
+    [Fact]
     public void ValidInputPreservesValues()
     {
         using MemoryStream content = new();
@@ -49,10 +61,12 @@ public sealed class ImageAnalysisInputTests
         ImageAnalysisInput input = new(
             content,
             "image/png",
-            "trace-123");
+            "trace-123",
+            "cashew-q95-320");
 
         Assert.Same(content, input.Content);
         Assert.Equal("image/png", input.ContentType);
         Assert.Equal("trace-123", input.TraceId);
+        Assert.Equal("cashew-q95-320", input.ModelId);
     }
 }

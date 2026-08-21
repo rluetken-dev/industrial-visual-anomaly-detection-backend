@@ -158,21 +158,28 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
                 320,
                 Convert.ToBase64String([1, 2, 3])));
 
+        StubAnomalyAnalyzer analyzer = new(analysisResult);
+
         using WebApplicationFactory<Program> factory = _factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IAnomalyAnalyzer>();
-                services.AddSingleton<IAnomalyAnalyzer>(new StubAnomalyAnalyzer(analysisResult));
+                services.AddSingleton<IAnomalyAnalyzer>(analyzer);
             });
         });
 
         using HttpClient client = CreateClient(factory);
         using MultipartFormDataContent content = CreateUpload(ValidPngContent, "image/png");
 
+        content.Add(new StringContent("visa-cashew-generalized-q95-320"), "modelId");
+
         using HttpResponseMessage response = await client.PostAsync("/api/v1/analyses", content);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        Assert.NotNull(analyzer.LastInput);
+        Assert.Equal("visa-cashew-generalized-q95-320", analyzer.LastInput.ModelId);
 
         AnalysisResponse? result = await response.Content.ReadFromJsonAsync<AnalysisResponse>();
 
@@ -222,23 +229,6 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
         return problem;
     }
 
-    private sealed class StubAnomalyAnalyzer : IAnomalyAnalyzer
-    {
-        private readonly AnomalyAnalysisResult _result;
-
-        public StubAnomalyAnalyzer(AnomalyAnalysisResult result)
-        {
-            _result = result;
-        }
-
-        public Task<AnomalyAnalysisResult> AnalyzeAsync(
-            ImageAnalysisInput input,
-            CancellationToken cancellationToken)
-        {
-            return Task.FromResult(_result);
-        }
-    }
-
     private sealed class InvalidImageAnomalyAnalyzer : IAnomalyAnalyzer
     {
         public Task<AnomalyAnalysisResult> AnalyzeAsync(
@@ -248,6 +238,26 @@ public sealed class AnalysesEndpointTests : IClassFixture<WebApplicationFactory<
             return Task.FromException<AnomalyAnalysisResult>(
                 new InvalidImageContentException(
                     "The Python inference service rejected the uploaded image."));
+        }
+    }
+
+    private sealed class StubAnomalyAnalyzer : IAnomalyAnalyzer
+    {
+        private readonly AnomalyAnalysisResult _result;
+
+        public StubAnomalyAnalyzer(AnomalyAnalysisResult result)
+        {
+            _result = result;
+        }
+
+        public ImageAnalysisInput? LastInput { get; private set; }
+
+        public Task<AnomalyAnalysisResult> AnalyzeAsync(
+            ImageAnalysisInput input,
+            CancellationToken cancellationToken)
+        {
+            LastInput = input;
+            return Task.FromResult(_result);
         }
     }
 }

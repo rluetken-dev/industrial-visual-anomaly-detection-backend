@@ -36,6 +36,11 @@ public sealed class PythonServiceAnomalyAnalyzer : IAnomalyAnalyzer
         using MultipartFormDataContent form = new();
         form.Add(imageContent, "image", "image");
 
+        if (input.ModelId is not null)
+        {
+            form.Add(new StringContent(input.ModelId), "modelId");
+        }
+
         try
         {
             using HttpRequestMessage request = new(

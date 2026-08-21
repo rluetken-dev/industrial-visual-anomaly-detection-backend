@@ -8,54 +8,43 @@ Only stable or deliberately selected contract elements belong here. Implementati
 
 ## Contract Status
 
-**Implemented – API version 1 baseline**
+**Implemented – API version 1 with model discovery and selection**
 
-The health and single-image analysis endpoints documented here are implemented, covered by automated integration tests, represented in OpenAPI, and verified through a real local backend-to-Python inference flow including PNG heatmap transport.
+The health, model-catalog, and single-image analysis endpoints are implemented, covered by automated tests, represented in OpenAPI, and verified through local multi-model backend-to-Python workflows including PNG heatmap transport.
 
 This is a portfolio and development contract, not a production service-level agreement.
 
 ## Base URLs
 
-The checked-in ASP.NET Core development profiles use:
+The checked-in development profiles use:
 
 ```text
 HTTPS: https://localhost:7056
 HTTP:  http://localhost:5070
 ```
 
-Deployment environments may use different hosts, ports, reverse proxies, and TLS termination. Endpoint paths and payload contracts remain unchanged.
+Deployment hosts and ports may differ. Endpoint paths and payload contracts remain unchanged.
 
 ## General Conventions
 
 - API routes use lowercase path segments.
 - Application endpoints are versioned under `/api/v1`.
-- Health endpoints are operational endpoints and are not placed under the application API version.
+- Health endpoints are operational and unversioned.
 - JSON property names use `camelCase`.
-- Durations are represented explicitly in milliseconds.
-- Unknown JSON response properties should be ignored by clients for forward compatibility.
-- Clients use the HTTP status code as the primary transport outcome.
-- Clients use structured response fields rather than parsing human-readable text.
-- Numeric score and threshold values are JSON numbers.
+- Durations are explicit milliseconds.
+- Unknown JSON response properties should be ignored for forward compatibility.
+- HTTP status is the primary transport outcome.
+- Clients use structured fields rather than parsing human-readable text.
+- Scores and thresholds are JSON numbers.
 - Successful analysis responses contain the backend trace identifier.
+- Stable model identifiers, not display names or category names, select runtimes.
 
 ## Content Types
 
-Successful JSON responses use:
-
 ```text
-application/json
-```
-
-Image-analysis uploads use:
-
-```text
-multipart/form-data
-```
-
-Client-facing Problem Details responses use:
-
-```text
-application/problem+json
+Successful JSON:             application/json
+Image-analysis request:     multipart/form-data
+Client-facing errors:       application/problem+json
 ```
 
 ## Health Endpoints
@@ -66,11 +55,7 @@ application/problem+json
 GET /health/live
 ```
 
-Purpose: confirm that the ASP.NET Core process is running and can answer requests.
-
-The check does not contact the Python service or execute model inference.
-
-#### Success Response
+Confirms that the ASP.NET Core process can answer requests. It does not contact Python or execute inference.
 
 ```http
 HTTP/1.1 200 OK
@@ -89,11 +74,9 @@ Content-Type: application/json
 GET /health/ready
 ```
 
-Purpose: report whether the dependency required for image analysis is currently reachable and healthy.
+Reports whether the configured Python health endpoint is reachable and healthy. It does not retrieve the catalog or execute a prediction.
 
-The backend performs a lightweight request to the configured Python health endpoint. It does not execute a prediction.
-
-#### Ready Response
+Ready:
 
 ```http
 HTTP/1.1 200 OK
@@ -106,7 +89,7 @@ Content-Type: application/json
 }
 ```
 
-#### Not-Ready Response
+Not ready:
 
 ```http
 HTTP/1.1 503 Service Unavailable
@@ -119,7 +102,95 @@ Content-Type: application/json
 }
 ```
 
-The response does not expose the configured Python URL, artifact location, connection error, or model-loader details.
+Health responses do not expose Python URLs, registry or artifact locations, connection errors, or loader details.
+
+## Model Catalog
+
+### Get Available Models
+
+```http
+GET /api/v1/models
+```
+
+OpenAPI operation metadata:
+
+| Property | Value |
+| --- | --- |
+| Operation ID | `GetInferenceModels` |
+| Summary | `Get available inference models` |
+
+The backend requests the internal Python catalog and maps it into a client-neutral public response. Python is authoritative for availability and default selection.
+
+### Success Response
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+```
+
+```json
+{
+  "defaultModelId": "mvtec-ad-capsule-320",
+  "models": [
+    {
+      "id": "mvtec-ad-capsule-320",
+      "displayName": "MVTec AD - Capsule",
+      "category": "capsule",
+      "inputSize": 320,
+      "isDefault": true
+    },
+    {
+      "id": "visa-cashew-generalized-q95-320",
+      "displayName": "VisA - Cashew",
+      "category": "cashew",
+      "inputSize": 320,
+      "isDefault": false
+    }
+  ]
+}
+```
+
+### Catalog Fields
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `defaultModelId` | string | yes | Non-empty ID of the default available model |
+| `models` | array | yes | Non-empty ordered collection of available models |
+| `models[].id` | string | yes | Stable non-empty model selection identifier |
+| `models[].displayName` | string | yes | Human-readable presentation name |
+| `models[].category` | string | yes | Artifact-defined product category |
+| `models[].inputSize` | integer | yes | Positive square model input size |
+| `models[].isDefault` | Boolean | yes | Whether the entry is the default |
+
+The catalog must contain exactly one default entry whose `id` equals `defaultModelId`. Clients should preserve the returned order for presentation unless they have a deliberate user-interface rule.
+
+### Catalog Status Codes
+
+| Status | Condition |
+| ---: | --- |
+| `200 OK` | Catalog retrieved and validated successfully |
+| `500 Internal Server Error` | Unexpected unhandled backend failure |
+| `503 Service Unavailable` | Python is unavailable, times out, fails, or returns an invalid catalog |
+
+### Catalog Unavailable
+
+```http
+HTTP/1.1 503 Service Unavailable
+Content-Type: application/problem+json
+```
+
+```json
+{
+  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/inference-unavailable",
+  "title": "Inference unavailable",
+  "status": 503,
+  "detail": "The anomaly inference service is currently unavailable.",
+  "instance": "/api/v1/models",
+  "traceId": "0HNNQ2F8C9UQT:00000001"
+}
+```
+
+The public category intentionally hides transport and internal catalog-validation details.
 
 ## Image Analysis
 
@@ -137,45 +208,42 @@ OpenAPI operation metadata:
 | Operation ID | `AnalyzeImage` |
 | Summary | `Analyze an industrial image` |
 
-The endpoint accepts exactly one image field per analysis request.
-
 ### Multipart Request
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `image` | binary file | yes | PNG or JPEG inspection image to analyze |
+| `image` | binary file | yes | PNG or JPEG image to analyze |
+| `modelId` | string | no | Stable model ID returned by `GET /api/v1/models` |
 
-Example using `curl.exe`:
+Example:
 
 ```powershell
 curl.exe `
     --insecure `
-    -X POST `
+    --request POST `
     https://localhost:7056/api/v1/analyses `
-    -F "image=@C:\path\to\image.png;type=image/png"
+    --form "image=@C:\path\to\image.png;type=image/png" `
+    --form "modelId=mvtec-ad-capsule-320"
 ```
 
-### Default Upload Constraints
+Selection behavior:
+
+- a non-empty `modelId` is forwarded unchanged to Python;
+- an omitted, empty, or whitespace-only `modelId` is treated as not specified;
+- when no ID is forwarded, Python selects its configured default;
+- clients should use only IDs returned by the current catalog;
+- display names and categories are not selection identifiers.
+
+### Upload Constraints
 
 | Constraint | Default |
 | --- | ---: |
 | Maximum image-file size | 10,485,760 bytes (10 MiB) |
 | Maximum multipart request-body size | 11,534,336 bytes (11 MiB) |
-| Supported PNG media type | `image/png` |
-| Supported JPEG media type | `image/jpeg` |
+| PNG media type | `image/png` |
+| JPEG media type | `image/jpeg` |
 
-The limits are configurable. A deployment may lower them without changing the response schema.
-
-The backend validates:
-
-- field presence;
-- non-empty content;
-- file size;
-- declared media type;
-- PNG or JPEG file signature;
-- agreement between media type and signature.
-
-The Python service performs actual image decoding. A file can therefore pass signature validation and still be rejected as unreadable during inference preparation.
+The backend validates presence, non-empty content, file size, media type, signature, and agreement between media type and signature. Python performs complete decoding, so signature-valid but unreadable data may still be rejected.
 
 ### Success Response
 
@@ -190,11 +258,11 @@ Content-Type: application/json
     "id": "mvtec-ad-capsule-320",
     "category": "capsule"
   },
-  "score": 4.992109298706055,
-  "threshold": 2.501821517944336,
+  "score": 4.992109,
+  "threshold": 2.501822,
   "decision": "anomalous",
-  "processingTimeMs": 1692,
-  "traceId": "0HNNQ2F8C9UQT:00000001",
+  "processingTimeMs": 1199,
+  "traceId": "0HNNVDI4958NA:00000001",
   "heatmap": {
     "contentType": "image/png",
     "width": 320,
@@ -208,49 +276,40 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `model` | object | yes | Identity of the model used for the analysis |
-| `model.id` | string | yes | Non-empty model or artifact identifier |
-| `model.category` | string | yes | Non-empty object category expected by the model |
-| `score` | number | yes | Finite, non-negative image-level anomaly score |
-| `threshold` | number | yes | Finite, non-negative decision threshold |
+| `model` | object | yes | Model that actually produced the result |
+| `model.id` | string | yes | Stable non-empty model identifier |
+| `model.category` | string | yes | Non-empty artifact category |
+| `score` | number | yes | Finite non-negative anomaly score |
+| `threshold` | number | yes | Finite non-negative decision threshold |
 | `decision` | string | yes | `normal` or `anomalous` |
-| `processingTimeMs` | integer | yes | Non-negative backend analysis duration in milliseconds |
-| `traceId` | string | yes | Backend request identifier for diagnostic correlation |
+| `processingTimeMs` | integer | yes | Non-negative backend controller duration |
+| `traceId` | string | yes | Backend diagnostic request identifier |
 | `heatmap` | object | yes | Model-generated anomaly heatmap |
-| `heatmap.contentType` | string | yes | Heatmap media type; currently `image/png` |
-| `heatmap.width` | integer | yes | Positive heatmap width in pixels |
-| `heatmap.height` | integer | yes | Positive heatmap height in pixels |
-| `heatmap.dataBase64` | string | yes | Non-empty Base64-encoded PNG payload |
+| `heatmap.contentType` | string | yes | Currently `image/png` |
+| `heatmap.width` | integer | yes | Positive width |
+| `heatmap.height` | integer | yes | Positive height |
+| `heatmap.dataBase64` | string | yes | Non-empty valid Base64 PNG representation |
 
-The heatmap is generated by the Python inference service from threshold-normalized patch scores. The backend validates the heatmap metadata and Base64 representation, maps it into the public response, and does not reproduce model-side localization logic.
+When `modelId` is supplied, clients should verify or record `model.id` from the response as the authoritative identity of the runtime used.
 
-The model decision rule in the current runtime is:
+The decision rule is:
 
 ```text
 score > threshold  => anomalous
 score <= threshold => normal
 ```
 
-The backend validates that the service decision is consistent with this rule. Clients should still treat `decision` as authoritative and must not recalculate it from rounded or reformatted values.
+The backend validates service consistency. Clients should treat `decision` as authoritative rather than recomputing it from reformatted values.
 
-`processingTimeMs` measures processing inside the controller from immediately before invoking the analyzer until the inference result is returned. It is not a complete client-observed round-trip duration and does not include model-service startup.
+`processingTimeMs` starts immediately before analyzer invocation and stops when inference returns. It excludes model-service startup and is not complete client-observed round-trip time.
 
 ## Trace Identifier
 
-The backend uses `HttpContext.TraceIdentifier` as the request identity for analysis.
+The backend uses `HttpContext.TraceIdentifier` for analysis requests. It is returned in successful analyses and Problem Details, included in structured logs, and forwarded to Python as `X-Correlation-ID`.
 
-The identifier is:
+The API does not adopt a client-supplied correlation header. Clients should report the returned `traceId` for diagnostics.
 
-- included in the successful analysis response as `traceId`;
-- included in Problem Details extensions;
-- included in structured backend logs;
-- forwarded to the Python service as the `X-Correlation-ID` request header.
-
-The current API does not define adoption of a client-supplied `X-Correlation-ID` as the backend trace identifier. Clients must therefore read the returned `traceId` when reporting a request for diagnostics.
-
-## Error Contract
-
-Analysis errors use ASP.NET Core-compatible Problem Details JSON where the request reaches the application error boundary.
+## Problem Details Contract
 
 Typical shape:
 
@@ -265,20 +324,16 @@ Typical shape:
 }
 ```
 
-### Problem Details Fields
-
 | Field | Type | Description |
 | --- | --- | --- |
-| `type` | string | Stable problem-category URI when explicitly mapped |
-| `title` | string | Short human-readable summary |
+| `type` | string | Stable problem-category URI when mapped |
+| `title` | string | Human-readable summary |
 | `status` | integer | HTTP status code |
 | `detail` | string | Human-readable explanation |
-| `instance` | string | Request path associated with the failure |
+| `instance` | string | Request path |
 | `traceId` | string | Backend trace identifier |
 
-Human-readable `title` and `detail` text may be refined without creating a new API version. Programmatic clients should primarily use HTTP status, the stable `type` URI when present, and structured fields.
-
-Public errors do not contain stack traces, local file paths, process command lines, secrets, Python exception details, or artifact-loader messages.
+Clients should primarily use status and stable `type`, not exact human-readable wording. Public errors omit stack traces, local paths, Python exception details, registry contents, and artifact-loader messages.
 
 ## Analysis Status Codes
 
@@ -286,245 +341,129 @@ Public errors do not contain stack traces, local file paths, process command lin
 | ---: | --- |
 | `200 OK` | Analysis completed successfully |
 | `400 Bad Request` | Missing, empty, signature-invalid, or unreadable image |
-| `413 Payload Too Large` | Image or multipart request exceeds the configured limit |
-| `415 Unsupported Media Type` | Declared image media type is not supported |
+| `413 Payload Too Large` | File or request exceeds the configured limit |
+| `415 Unsupported Media Type` | Declared image media type is unsupported |
 | `500 Internal Server Error` | Unexpected unhandled backend failure |
-| `503 Service Unavailable` | Python inference is unavailable, times out, fails, or returns an invalid response |
+| `503 Service Unavailable` | Python is unavailable, times out, rejects the model, fails, or returns an invalid response |
 
-Adapter timeouts currently map to `503 Service Unavailable`, not `504 Gateway Timeout`.
+The current backend does not expose a dedicated public unknown-model status. A Python unknown-model response crosses the adapter boundary as inference unavailable and maps to `503 Service Unavailable`.
 
-Cancellation caused by the caller is propagated through the asynchronous pipeline and is not intentionally converted into an inference-unavailable Problem Details response.
+Adapter timeouts map to `503`, not `504`. Caller cancellation is propagated and is not intentionally converted into inference unavailable.
 
 ## Validation Failure Mapping
 
-### Missing Image Field
+### Missing or Empty Image
 
-```http
-HTTP/1.1 400 Bad Request
-Content-Type: application/problem+json
-```
+Missing and empty files return `400 Bad Request` with an invalid-image Problem Details category.
 
-ASP.NET Core model binding produces a validation Problem Details response. Its title is:
+### Invalid or Mismatched Signature
 
-```text
-One or more validation errors occurred.
-```
-
-Clients should not depend on the exact generated validation-error dictionary beyond recognizing the `400` outcome.
-
-### Empty Image
-
-```http
-HTTP/1.1 400 Bad Request
-```
-
-```json
-{
-  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/invalid-image",
-  "title": "Invalid image",
-  "status": 400,
-  "detail": "The uploaded image file must not be empty.",
-  "instance": "/api/v1/analyses"
-}
-```
-
-### Invalid or Mismatched File Signature
-
-```http
-HTTP/1.1 400 Bad Request
-```
-
-```json
-{
-  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/invalid-image",
-  "title": "Invalid image",
-  "status": 400,
-  "detail": "The uploaded file content does not match its declared image type.",
-  "instance": "/api/v1/analyses"
-}
-```
+Returns `400 Bad Request` with detail indicating that content does not match the declared type.
 
 ### Unreadable Decoded Image
 
-This response is used when the upload passes the bounded backend checks but the Python service cannot decode it as an image.
-
-```http
-HTTP/1.1 400 Bad Request
-```
-
-```json
-{
-  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/invalid-image",
-  "title": "Invalid image",
-  "status": 400,
-  "detail": "The uploaded file is not a readable image.",
-  "instance": "/api/v1/analyses"
-}
-```
+When Python returns `400 Bad Request` for image decoding, the backend maps it to public `400 Bad Request` with the stable invalid-image category.
 
 ### Image Too Large
 
-```http
-HTTP/1.1 413 Payload Too Large
-```
-
-```json
-{
-  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/image-too-large",
-  "title": "Image too large",
-  "status": 413,
-  "detail": "The uploaded image exceeds the configured size limit.",
-  "instance": "/api/v1/analyses"
-}
-```
-
-If the entire HTTP request exceeds the server-level limit before controller execution, Kestrel or multipart handling may generate the rejection earlier than the controller-level Problem Details mapping. Clients must rely primarily on status `413` for this case.
+Returns `413 Payload Too Large`. Server-level request limits may reject the request before controller Problem Details mapping.
 
 ### Unsupported Media Type
 
-```http
-HTTP/1.1 415 Unsupported Media Type
-```
-
-```json
-{
-  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/unsupported-image-type",
-  "title": "Unsupported image type",
-  "status": 415,
-  "detail": "The uploaded file does not use a supported image content type.",
-  "instance": "/api/v1/analyses"
-}
-```
+Returns `415 Unsupported Media Type` with the stable unsupported-image-type category.
 
 ### Inference Unavailable
 
-```http
-HTTP/1.1 503 Service Unavailable
-```
+Returns `503 Service Unavailable` for:
 
-```json
-{
-  "type": "https://github.com/rluetken-dev/industrial-visual-anomaly-detection-backend/problems/inference-unavailable",
-  "title": "Inference unavailable",
-  "status": 503,
-  "detail": "The anomaly inference service is currently unavailable.",
-  "instance": "/api/v1/analyses"
-}
-```
-
-This public category intentionally combines several internal causes:
-
-- Python service cannot be reached;
-- configured adapter timeout expires;
-- Python returns an unsuccessful status other than the mapped unreadable-image response;
-- response JSON is empty or malformed;
-- model ID or category is missing;
-- score or threshold is negative or non-finite;
-- decision is inconsistent with score and threshold.
-- heatmap data is missing or structurally invalid;
-- heatmap media type is not `image/png`;
-- heatmap dimensions are not positive;
-- heatmap data is not valid Base64.
+- unreachable Python service;
+- adapter timeout;
+- unsuccessful Python status other than mapped image `400`;
+- unknown model identifier returned as an unsuccessful Python status;
+- empty or malformed JSON;
+- invalid model ID or category;
+- negative or non-finite score or threshold;
+- decision inconsistent with score and threshold;
+- missing or invalid heatmap metadata or Base64 data.
 
 ## Localization Output
 
-API version 1 returns one model-generated anomaly heatmap with every successful analysis.
+Every successful version-1 analysis returns one threshold-normalized Base64 RGB PNG heatmap at model-input dimensions.
 
-The heatmap:
+It is intended for display and diagnostic interpretation and does not replace `decision`. The response does not contain raw patch scores, segmentation masks, regions, boxes, or a pre-blended overlay.
 
-- is represented as a Base64-encoded RGB PNG;
-- uses the configured model input dimensions;
-- visualizes threshold-normalized patch anomaly scores;
-- is intended for client-side display and diagnostic interpretation;
-- does not replace the image-level `decision`.
+Future localization additions must preserve existing meanings or introduce a new API version.
 
-The current response does not include raw patch scores, segmentation masks, defect regions, bounding boxes, or a pre-blended overlay. Clients may display the heatmap independently or combine it with the source image for presentation.
+## Model Selection Contract
 
-Future localization additions must be selected based on measured payload size and actual client requirements. Existing version 1 field meanings must remain unchanged, or a new API version must be introduced.
-
-## Model Selection
-
-The caller cannot select a model or category in API version 1. The active model is determined by the configured Python service and its loaded artifact.
-
-The response exposes `model.id` and `model.category` so clients can display and record which model produced the result.
-
-Changing the deployed model does not by itself require a new API version when the response schema and field semantics remain compatible.
+- Clients retrieve available models through `GET /api/v1/models`.
+- The catalog identifies the current default model.
+- Clients may submit one catalog model ID with an analysis.
+- Omitted or blank selection delegates to the Python default.
+- The backend does not select by category or display name.
+- The backend does not verify catalog membership before forwarding a non-empty ID.
+- Python remains authoritative for runtime resolution.
+- The analysis response identifies the actual model used.
+- Adding or replacing models does not require a new API version while field meanings remain compatible.
 
 ## CORS Behavior
 
-CORS uses an explicit configuration allowlist.
+CORS uses an explicit allowlist. No browser origin is allowed by default. Configured HTTP or HTTPS origins may use required methods and headers. Origins with paths, queries, or fragments are rejected during startup.
 
-- no browser origin is allowed by default;
-- configured HTTP or HTTPS origins may use the methods and headers needed by the browser client;
-- origins containing a path, query, or fragment are rejected during application startup;
-- CORS behavior affects browsers and does not replace authentication or authorization.
-
-CORS headers are deployment configuration, not part of the JSON response contract.
+CORS does not replace authentication or authorization.
 
 ## OpenAPI Contract
 
-The OpenAPI document is mapped in the Development environment at:
+The Development OpenAPI document is available at:
 
 ```text
 /openapi/v1.json
 ```
 
-Using the checked-in HTTPS profile:
+It represents the catalog operation and analysis multipart fields, including binary `image`, optional `modelId`, response schemas, heatmap payload, and declared statuses.
 
-```text
-https://localhost:7056/openapi/v1.json
-```
-
-The document represents `image` as a binary multipart field and documents the analysis operation metadata, structured response schemas including the heatmap payload, and declared response status codes.
-
-OpenAPI availability outside Development is not part of the current contract.
+Availability outside Development is not part of the contract.
 
 ## Compatibility Rules
 
-- Existing field meanings do not change within API version 1.
-- New additive response fields may be introduced within version 1 when existing clients can safely ignore unknown JSON properties.
-- Removing fields, changing field types, or changing decision semantics requires a new API version.
-- Model replacement does not require a new API version when the HTTP contract remains compatible and the model identity changes visibly.
-- Clients do not depend on JSON property order.
-- Clients do not parse human-readable error text to determine behavior.
-- Clients tolerate additional Problem Details extension fields.
-- Operational configuration may change limits, dependency locations, and allowed origins without changing the API version.
+- Existing field meanings do not change within version 1.
+- Additive response fields may be introduced when clients can ignore unknown properties.
+- Removing fields, changing types, or changing decision semantics requires a new API version.
+- Adding catalog entries or changing the default does not require a new API version.
+- Clients do not depend on property or catalog order unless order is deliberately used for presentation.
+- Clients do not parse human-readable errors to determine behavior.
+- Clients tolerate additional Problem Details extensions.
+- Operational configuration may change limits, dependency locations, and allowed origins.
 
 ## Security and Privacy Rules
 
-- Uploaded data is untrusted.
-- File extension and declared content type alone are insufficient validation.
-- Request size, file size, and inference-adapter time are bounded.
-- Raw image data is not included in ordinary logs.
-- Images are not persisted by default.
-- Health and error responses do not reveal trusted artifact locations, private service details, or secrets.
-- The current API does not implement authentication or authorization.
-- Production exposure requires deployment-specific network security, access control, and abuse protection.
-
-## Example Values
-
-Scores, thresholds, identifiers, durations, and trace identifiers shown in this document illustrate the verified contract shape. They do not guarantee a particular result for arbitrary images or future compatible model artifacts.
+- Uploads are untrusted.
+- Extension and declared content type alone are insufficient validation.
+- Request size, file size, and adapter time are bounded.
+- Raw images are not logged or persisted by default.
+- Health and errors do not reveal registry or artifact locations.
+- The backend never accepts registry or artifact uploads.
+- Authentication and authorization are not implemented.
+- Production exposure requires network security, access control, and abuse protection.
 
 ## Deferred Contract Decisions
 
-- additional localization representations such as masks, regions, overlays, or raw patch scores;
-- optional model selection;
-- batch-analysis requests;
-- authentication and authorization contract;
-- persistence and analysis-history resources;
-- client-submitted correlation-ID adoption;
-- rate-limit response behavior;
-- production caching or asynchronous job contracts.
-
-These decisions do not block the initial web client.
+- dedicated public unknown-model error mapping;
+- additional localization forms;
+- batch analysis;
+- authentication and authorization;
+- persistence and history resources;
+- client correlation-ID adoption;
+- rate-limit behavior;
+- caching or asynchronous jobs.
 
 ## Related Documentation
 
 - `ProjectSpecification.md` – stable requirements
 - `ArchitectureOverview.md` – component and dependency boundaries
-- `ModelIntegrationStrategy.md` – Python service integration
+- `ModelIntegrationStrategy.md` – Python integration
 - `DevelopmentStatus.md` – verified implementation status
 
 ## Last Updated
 
-2026-08-17
+2026-08-21
