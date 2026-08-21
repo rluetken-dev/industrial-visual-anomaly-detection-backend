@@ -28,6 +28,7 @@ public sealed class PythonInferenceOptionsTests : IClassFixture<WebApplicationFa
 
         Assert.Equal("http://localhost:8000", options.BaseUrl);
         Assert.Equal("/api/v1/predictions", options.PredictionPath);
+        Assert.Equal("/api/v1/models", options.ModelCatalogPath);
         Assert.Equal("/health/live", options.HealthPath);
         Assert.Equal(30, options.TimeoutSeconds);
     }
@@ -35,6 +36,7 @@ public sealed class PythonInferenceOptionsTests : IClassFixture<WebApplicationFa
     [Theory]
     [InlineData("PythonInference:BaseUrl", "relative-url")]
     [InlineData("PythonInference:PredictionPath", "api/v1/predictions")]
+    [InlineData("PythonInference:ModelCatalogPath", "api/v1/models")]
     [InlineData("PythonInference:HealthPath", "health/live")]
     [InlineData("PythonInference:TimeoutSeconds", "0")]
     public void InvalidPythonInferenceConfigurationIsRejected(

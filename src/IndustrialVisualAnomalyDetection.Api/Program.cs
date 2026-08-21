@@ -6,6 +6,7 @@ using IndustrialVisualAnomalyDetection.Api.Options;
 using IndustrialVisualAnomalyDetection.Api.Validation.Images;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Options;
+using IndustrialVisualAnomalyDetection.Api.Application.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -78,6 +79,15 @@ builder.Services.AddOptions<PythonInferenceOptions>()
         "The Python inference prediction path must be a root-relative path.")
     .Validate(
         options =>
+            !string.IsNullOrWhiteSpace(options.ModelCatalogPath)
+            && options.ModelCatalogPath.StartsWith('/')
+            && Uri.TryCreate(
+                options.ModelCatalogPath,
+                UriKind.Relative,
+                out _),
+        "The Python inference model catalog path must be a root-relative path.")
+    .Validate(
+        options =>
             !string.IsNullOrWhiteSpace(options.HealthPath)
             && options.HealthPath.StartsWith('/')
             && Uri.TryCreate(
@@ -132,6 +142,19 @@ builder.Services
 builder.Services.AddScoped<IImageUploadValidator, ImageUploadValidator>();
 
 builder.Services.AddHttpClient<IAnomalyAnalyzer, PythonServiceAnomalyAnalyzer>(
+    (serviceProvider, httpClient) =>
+    {
+        PythonInferenceOptions options = serviceProvider
+            .GetRequiredService<IOptions<PythonInferenceOptions>>()
+            .Value;
+
+        httpClient.BaseAddress = new Uri(options.BaseUrl);
+        httpClient.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+    });
+
+builder.Services.AddHttpClient<
+    IInferenceModelCatalogProvider,
+    PythonInferenceModelCatalogProvider>(
     (serviceProvider, httpClient) =>
     {
         PythonInferenceOptions options = serviceProvider

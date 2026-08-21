@@ -21,14 +21,39 @@ public sealed class PythonServiceAnomalyAnalyzerTests
             Assert.Equal("trace-123", Assert.Single(traceIds));
 
             MultipartFormDataContent multipart = Assert.IsType<MultipartFormDataContent>(request.Content);
-            HttpContent uploadedImage = Assert.Single(multipart);
 
-            Assert.Equal("image/png", uploadedImage.Headers.ContentType?.MediaType);
-            Assert.Equal("image", uploadedImage.Headers.ContentDisposition?.Name?.Trim('"'));
+            Assert.Equal(2, multipart.Count());
 
-            byte[] uploadedBytes = await uploadedImage.ReadAsByteArrayAsync(cancellationToken);
+            HttpContent uploadedImage = Assert.Single(
+                multipart,
+                content =>
+                    content.Headers.ContentDisposition
+                        ?.Name
+                        ?.Trim('"') == "image");
+
+            HttpContent modelIdContent = Assert.Single(
+                multipart,
+                content =>
+                    content.Headers.ContentDisposition
+                        ?.Name
+                        ?.Trim('"') == "modelId");
+
+            Assert.Equal(
+                "image/png",
+                uploadedImage.Headers.ContentType?.MediaType);
+
+            byte[] uploadedBytes =
+                await uploadedImage.ReadAsByteArrayAsync(
+                    cancellationToken);
+
+            string forwardedModelId =
+                await modelIdContent.ReadAsStringAsync(
+                    cancellationToken);
 
             Assert.Equal([1, 2, 3], uploadedBytes);
+            Assert.Equal(
+                "visa-cashew-generalized-q95-320",
+                forwardedModelId);
 
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -54,7 +79,11 @@ public sealed class PythonServiceAnomalyAnalyzerTests
         using MemoryStream imageStream = new([1, 2, 3]);
 
         AnomalyAnalysisResult result = await analyzer.AnalyzeAsync(
-            new ImageAnalysisInput(imageStream, "image/png", "trace-123"),
+            new ImageAnalysisInput(
+                imageStream,
+                "image/png",
+                "trace-123",
+                "visa-cashew-generalized-q95-320"),
             CancellationToken.None);
 
         Assert.Equal("mvtec-ad-capsule-320", result.ModelId);

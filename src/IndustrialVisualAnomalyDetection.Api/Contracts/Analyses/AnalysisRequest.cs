@@ -6,4 +6,7 @@ public sealed class AnalysisRequest
 {
     [FromForm(Name = "image")]
     public IFormFile? Image { get; init; }
+
+    [FromForm(Name = "modelId")]
+    public string? ModelId { get; init; }
 }
