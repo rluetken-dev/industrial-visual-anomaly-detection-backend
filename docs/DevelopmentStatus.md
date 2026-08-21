@@ -2,161 +2,198 @@
 
 ## Purpose
 
-This document records verified implementation progress and the immediate next steps for the backend.
+This document records verified implementation progress and immediate next steps for the backend.
 
-It is intentionally concise. Stable requirements belong in `ProjectSpecification.md`, architecture in `ArchitectureOverview.md`, model integration in `ModelIntegrationStrategy.md`, and HTTP contracts in `ApiContract.md`.
+Stable requirements belong in `ProjectSpecification.md`, architecture in `ArchitectureOverview.md`, model integration in `ModelIntegrationStrategy.md`, and HTTP contracts in `ApiContract.md`.
 
 ## Current Phase
 
-**Backend heatmap contract complete**
+**Selectable multi-model backend integration complete**
 
-The backend provides the stable HTTP boundary used by the desktop client. It validates uploaded images, delegates inference and heatmap generation to the Python model service, validates and maps returned results, and reports dependency-aware readiness.
+The backend exposes a public model catalog, accepts an optional model identifier with image analysis, forwards explicit selection to Python, validates the returned actual model identity and result, and preserves compatibility when selection is omitted.
 
-The model-generated PNG heatmap is now transported through the public analysis response and has been verified through the complete local stack.
+The implementation is committed in:
 
-Further backend work should be driven by concrete client, deployment, or operational requirements rather than speculative expansion.
+```text
+af710d1 feat: support selectable inference models
+```
+
+The backend has been verified against the registry-capable model/inference service released as `v0.6.0`. The complete local catalog contained Capsule, Bottle, Candle, and Cashew. Native desktop integration exercised all four models, while the containerized stack explicitly verified Capsule and Cashew requests.
+
+The backend feature branch is pushed, all automated tests pass, and local build and end-to-end verification succeed. Documentation and release preparation are the active milestone.
 
 ## Verified Environment
 
-- operating system used for local development: Windows;
-- .NET SDK: `10.0.400`;
-- Git: `2.55.0.windows.3`;
-- API target framework: .NET 10;
-- repository maintained separately from the Python model repository;
-- Debug and Release solution builds succeed;
-- all automated unit and integration tests succeed;
-- GitHub Actions CI succeeds on `main`;
-- the complete local Python-service-to-backend analysis flow has been verified with a real MVTec AD image;
-- the backend heatmap response was decoded into a readable `320 × 320` PNG and visually inspected.
+- Windows local development environment;
+- .NET SDK `10.0.400`;
+- Git `2.55.0.windows.3`;
+- API target framework .NET 10;
+- Debug and Release builds succeed;
+- complete unit and integration suite succeeds;
+- GitHub Actions succeeds for the pushed feature implementation;
+- model-service `v0.6.0` provides the compatible catalog and selection contract;
+- native backend integration is verified through HTTPS port `7056`;
+- Docker integration is verified through backend host port `8080`;
+- returned heatmaps decode as readable `320 × 320` PNG images.
 
 ## Implemented
 
 ### Repository and Build Foundation
 
-- Git repository initialized on the `main` branch and connected to GitHub;
-- `IndustrialVisualAnomalyDetection.slnx` created;
-- `src`, `tests`, `docs`, and `scripts` directory conventions established;
-- controller-based ASP.NET Core Web API project created;
-- xUnit API test project created and added to the solution;
-- repository `.gitignore`, `.gitattributes`, and `.editorconfig` configured;
-- generated WeatherForecast example removed;
-- GitHub Actions CI added for restore, Release build, and automated tests;
-- Conventional Commit guidelines documented.
+- separate GitHub repository and `main` baseline;
+- `.slnx`, production project, and xUnit test project;
+- `src`, `tests`, `docs`, and `scripts` conventions;
+- repository ignore, attribute, and formatting rules;
+- Release restore, build, and test CI;
+- Conventional Commit guidance.
 
-### HTTP API
+### Public HTTP API
 
-- liveness endpoint implemented at `GET /health/live`;
-- dependency-aware readiness endpoint implemented at `GET /health/ready`;
-- versioned analysis endpoint implemented at `POST /api/v1/analyses`;
-- multipart image-upload contract implemented;
-- response contract includes model identity, category, score, threshold, decision, processing time, trace ID, and a Base64-encoded PNG heatmap;
-- route-based API version identifier established through `/api/v1`;
-- OpenAPI document exposed in the Development environment;
-- analysis operation ID, summary, description, multipart request, and binary image schema verified by automated tests.
+- `GET /health/live`;
+- `GET /health/ready`;
+- `GET /api/v1/models`;
+- `POST /api/v1/analyses`;
+- route-based `/api/v1` versioning;
+- Development OpenAPI document;
+- public catalog containing default model and available entries;
+- optional multipart `modelId` analysis field;
+- analysis response containing actual model, category, score, threshold, decision, processing time, trace ID, and Base64 PNG heatmap.
 
-### Image Validation and Request Limits
+### Model Catalog
 
-- missing and empty uploads rejected;
-- supported media types restricted to PNG and JPEG by default;
-- maximum image size configured and enforced;
-- maximum multipart request-body size configured and enforced;
-- PNG and JPEG file signatures validated before inference;
-- media type and file signature must agree;
-- unreadable image content returned by the Python service mapped to `400 Bad Request`;
-- upload and request limits bound from validated startup configuration.
+- `IInferenceModelCatalogProvider` application abstraction;
+- validated `InferenceModelCatalog` application model;
+- `PythonInferenceModelCatalogProvider` HTTP adapter;
+- internal Python catalog DTO mapping;
+- `ModelsController` public endpoint;
+- configured `PythonInference:ModelCatalogPath`;
+- validation of non-empty entries, unique identities, model metadata, and coherent default selection;
+- catalog transport, timeout, unsuccessful response, malformed JSON, and invalid payload mapping to inference unavailable;
+- catalog endpoint integration tests for success and dependency failure.
 
-### Inference Integration
+### Image Validation and Limits
 
-- application-level `IAnomalyAnalyzer` abstraction introduced;
-- concrete HTTP adapter implemented for the Python FastAPI inference service;
-- backend sends the validated image as multipart form data;
-- Python inference responses validated before they enter the public API contract;
-- required heatmap metadata, dimensions, PNG media type, and Base64 representation validated;
-- internal heatmap data mapped through `AnomalyHeatmap` into the public response contract;
-- invalid or unavailable inference responses mapped to controlled failures;
-- configurable service base URL, prediction path, health path, and timeout implemented;
-- inference-service health probe implemented;
-- readiness reflects the actual availability of the Python inference service;
-- model-runtime and artifact-loading logic remain owned by the Python repository.
+- missing and empty upload rejection;
+- PNG and JPEG media-type restriction;
+- configurable file and multipart limits;
+- PNG and JPEG signature validation;
+- media-type/signature agreement;
+- unreadable Python-decoded images mapped to `400`;
+- startup validation of upload settings.
 
-### Error Handling and Observability
+### Model-Specific Inference
 
-- ASP.NET Core Problem Details enabled;
-- inference-unavailable failures mapped to `503 Service Unavailable`;
-- invalid decoded image content mapped to `400 Bad Request`;
-- validation failures returned with controlled status codes and messages;
-- trace identifier included in Problem Details responses;
-- ASP.NET Core trace identifier forwarded to the Python service as `X-Correlation-ID`;
-- backend-owned trace identifier included in successful responses, errors, and structured logs;
-- structured analysis logging added without logging raw image content;
-- processing time included in successful analysis responses;
-- constructor dependencies and domain inputs protected by explicit null and invariant checks.
+- optional model ID carried by `AnalysisRequest` and `ImageAnalysisInput`;
+- null, empty, or whitespace-only selection normalized to no explicit model;
+- non-null model ID added to Python multipart requests as `modelId`;
+- omitted selection preserves Python default behavior;
+- response model ID and category validated and mapped;
+- unknown-model Python failure currently mapped to public `503`;
+- image, scalar decision, and heatmap contracts remain unchanged otherwise;
+- cancellation and timeout semantics preserved.
+
+### Heatmap Integration
+
+- required heatmap metadata, dimensions, media type, and Base64 validation;
+- internal heatmap mapped through `AnomalyHeatmap`;
+- public Base64 PNG heatmap response;
+- native WPF overlay verified with visibility and opacity controls;
+- model-specific heatmaps verified for Capsule, Bottle, Candle, and Cashew.
+
+### Health, Errors, and Observability
+
+- dependency-independent liveness;
+- Python-aware readiness;
+- Problem Details boundary;
+- invalid decoded image mapped to `400`;
+- inference and catalog unavailable mapped to `503`;
+- trace ID returned in success and errors;
+- trace ID forwarded through `X-Correlation-ID`;
+- structured analysis logging without raw image content;
+- processing duration in analysis responses;
+- constructor and domain invariants.
 
 ### Configuration and Client Integration
 
-- image-upload options bound and validated during startup;
-- Python inference options bound and validated during startup;
-- CORS origins bound and validated during startup;
-- configurable CORS policy implemented;
-- no browser origin allowed by default;
-- explicitly configured origins supported for the future web client;
-- invalid configuration prevents startup rather than failing during a request.
+- image-upload, Python-inference, and CORS options bound and startup-validated;
+- Python base URL, prediction path, catalog path, health path, and timeout configurable;
+- explicit CORS allowlist with no browser origin by default;
+- desktop catalog retrieval, default selection, explicit selection, and analysis verified;
+- backend remains client-neutral and contains no WPF presentation logic.
 
-### Testing and Local Verification
+### Testing
 
-- unit tests cover image validation, inference response handling, heatmap validation, health probing, exceptions, and domain invariants;
-- integration tests cover health endpoints, analysis behavior, public heatmap mapping, Problem Details, startup options, CORS, and OpenAPI;
-- backend tests run without a dataset or real model artifact;
-- `scripts/verify-local-stack.ps1` verifies Python liveness, backend liveness, and backend readiness;
-- the verification script optionally submits a real image through the backend analysis endpoint;
-- a real Capsule `poke` image was classified as anomalous through the complete local stack;
-- the verified response contained the expected model identity, category, score, threshold, decision, processing time, trace ID, and PNG heatmap;
-- the backend heatmap payload was decoded into a readable image whose strongest response corresponded visually to the damaged Capsule area.
+Unit tests cover:
+
+- image validation;
+- catalog domain invariants;
+- Python catalog request, mapping, timeout, status, JSON, and payload failures;
+- model-ID prediction forwarding;
+- prediction, decision, and heatmap validation;
+- health probing;
+- exceptions and application invariants.
+
+Integration tests cover:
+
+- health endpoints;
+- model-catalog endpoint success and failure;
+- analysis and model-ID forwarding;
+- public heatmap mapping;
+- Problem Details;
+- options binding and invalid catalog path startup behavior;
+- dependency registration;
+- CORS;
+- OpenAPI.
+
+The complete backend suite passes without datasets, artifacts, a registry, or a live Python process.
+
+### End-to-End Verification
+
+- direct Python catalog verified;
+- backend catalog verified through `https://localhost:7056/api/v1/models`;
+- four entries and Capsule default verified;
+- native desktop retrieved and displayed the catalog;
+- Capsule, Bottle, Candle, and Cashew selected successfully;
+- decisions, model identity, category, timing, trace ID, and heatmaps displayed;
+- Docker Compose loaded the same registry read-only;
+- containerized backend catalog returned all four entries;
+- explicit Capsule and Cashew containerized analyses succeeded;
+- returned model ID matched each requested ID;
+- verification script validated health, readiness, result, and decoded heatmap.
 
 ### Documentation
 
-- repository README updated with complete local setup and troubleshooting instructions;
-- initial project specification, architecture overview, API contract, model-integration strategy, and development-status documents created;
-- model artifact prerequisites and the two-repository startup sequence documented;
-- local verification workflow documented.
+- README updated for catalog and model selection;
+- API contract updated with catalog and optional `modelId`;
+- architecture updated with catalog boundary and flows;
+- model integration strategy and project specification aligned with Python `v0.6.0`;
+- local and Docker verification behavior documented.
 
 ## Current Repository Shape
 
 ```text
 industrial-visual-anomaly-detection-backend/
-|-- .github/
-|   `-- workflows/
-|       `-- ci.yml
+|-- .github/workflows/ci.yml
 |-- docs/
 |   |-- ApiContract.md
 |   |-- ArchitectureOverview.md
 |   |-- DevelopmentStatus.md
 |   |-- ModelIntegrationStrategy.md
 |   `-- ProjectSpecification.md
-|-- scripts/
-|   `-- verify-local-stack.ps1
-|-- src/
-|   `-- IndustrialVisualAnomalyDetection.Api/
-|       |-- Application/
-|       |-- Contracts/
-|       |-- Controllers/
-|       |-- Errors/
-|       |-- Infrastructure/
-|       |-- Options/
-|       |-- Properties/
-|       |-- Validation/
-|       |-- Program.cs
-|       |-- appsettings.Development.json
-|       |-- appsettings.json
-|       `-- IndustrialVisualAnomalyDetection.Api.csproj
-|-- tests/
-|   `-- IndustrialVisualAnomalyDetection.Api.Tests/
-|       |-- Integration/
-|       |-- Unit/
-|       `-- IndustrialVisualAnomalyDetection.Api.Tests.csproj
-|-- .editorconfig
-|-- .gitattributes
-|-- .gitignore
+|-- scripts/verify-local-stack.ps1
+|-- src/IndustrialVisualAnomalyDetection.Api/
+|   |-- Application/
+|   |-- Contracts/
+|   |-- Controllers/
+|   |-- Errors/
+|   |-- Infrastructure/
+|   |-- Options/
+|   |-- Validation/
+|   |-- Program.cs
+|   `-- appsettings.json
+|-- tests/IndustrialVisualAnomalyDetection.Api.Tests/
+|   |-- Integration/
+|   `-- Unit/
 |-- COMMITS.md
 |-- IndustrialVisualAnomalyDetection.slnx
 `-- README.md
@@ -164,147 +201,89 @@ industrial-visual-anomaly-detection-backend/
 
 ## Verified HTTP Endpoints
 
-### Liveness
-
 ```text
-GET /health/live
-```
-
-Returns HTTP `200 OK` while the backend process is running:
-
-```json
-{
-  "status": "healthy"
-}
-```
-
-### Readiness
-
-```text
-GET /health/ready
-```
-
-Returns HTTP `200 OK` when the configured Python inference service is healthy:
-
-```json
-{
-  "status": "ready"
-}
-```
-
-Returns HTTP `503 Service Unavailable` when the dependency cannot serve inference:
-
-```json
-{
-  "status": "not_ready"
-}
-```
-
-### Image Analysis
-
-```text
+GET  /health/live
+GET  /health/ready
+GET  /api/v1/models
 POST /api/v1/analyses
-Content-Type: multipart/form-data
-Form field: image
 ```
 
-The endpoint accepts a validated PNG or JPEG image and returns the mapped anomaly-analysis result together with a Base64-encoded PNG heatmap. The verified local integration uses the Python service at `http://127.0.0.1:8000` and the backend HTTPS profile at `https://localhost:7056`.
+Analysis multipart fields:
 
-## Selected Model-Integration Boundary
+```text
+image   required
+modelId optional
+```
 
-The backend communicates with the Python inference runtime over HTTP.
+The catalog identifies the default and available models. A non-empty analysis `modelId` is forwarded to Python. Omitted or blank selection delegates to Python's configured default.
 
-This decision is implemented and no longer open for the current baseline. The boundary provides:
+## Selected Integration Boundary
 
-- separation between ASP.NET Core API concerns and Python/PyTorch runtime concerns;
-- reuse of the verified Python reference inference path;
-- independent testing and lifecycle management;
-- a replaceable adapter behind `IAnomalyAnalyzer`;
-- a stable contract for future web and desktop clients.
+HTTP between ASP.NET Core and Python remains the selected boundary.
 
-Direct .NET inference and ad hoc Python process invocation are not part of the current implementation.
+It provides:
+
+- separation of public API and model runtime concerns;
+- reuse of verified Python registry and inference behavior;
+- independent repository testing and lifecycle management;
+- replaceable adapters behind `IInferenceModelCatalogProvider`, `IAnomalyAnalyzer`, and `IInferenceServiceHealthProbe`;
+- stable contracts for desktop and future web clients.
+
+Direct .NET inference and ad hoc Python process invocation remain outside the current design.
 
 ## External Runtime Requirement
 
-Complete local inference requires the separate Python model repository and a compatible exported model artifact.
+Complete inference requires compatible Python service source and externally supplied artifacts. Multi-model mode additionally requires `models.json`.
 
-The artifact is not stored in this backend repository. The verified Capsule artifact contains `metadata.json` and `feature_memory.pt`, and its complete feature memory is approximately 410 MiB. Until an approved distribution mechanism exists, users must export it locally from their own permitted MVTec AD copy by following the model repository instructions.
+Model/inference service `v0.6.0` is the first published registry-capable compatibility baseline. Artifacts and registries remain outside this repository and are not redistributed by the backend.
 
-Backend unit and integration tests do not require this external runtime.
+Backend automated tests do not require the external runtime.
 
 ## Deferred or Optional Work
 
-The following items are deliberately deferred and do not block initial frontend development:
-
-- web-client implementation;
-- Docker and Docker Compose packaging;
+- dedicated public unknown-model error mapping;
+- web client;
 - production deployment configuration;
-- production monitoring, metrics, tracing backend, and alerting;
-- rate limiting and other deployment-specific abuse controls;
+- monitoring, metrics, distributed tracing export, and alerting;
+- rate limiting and abuse controls;
 - authentication and authorization;
 - persistence and analysis history;
 - batch analysis;
-- model selection across multiple artifacts or categories;
-- an approved model-artifact distribution mechanism;
-- performance and load testing under deployment-like conditions;
-- additional localization forms such as overlays, masks, regions, or raw patch scores.
+- catalog caching or refresh policy;
+- automatic visual category recognition;
+- approved artifact distribution;
+- deployment-like performance and load testing;
+- additional localization forms.
 
-These capabilities should be added only when a verified product or deployment requirement justifies them.
+Docker and Docker Compose packaging and multi-model selection are no longer deferred; they have been implemented and verified in the separate stack repository.
 
 ## Immediate Next Steps
 
-1. complete and commit the backend documentation update for the heatmap milestone;
-2. preserve the current API contract while the desktop client adds heatmap presentation;
-3. add backend changes only when required by verified client integration needs;
-4. perform another complete end-to-end verification after desktop heatmap display is implemented;
-5. evaluate Docker Compose and deployment documentation after the model service, backend, and client are stable together.
+1. Complete and commit the backend multi-model documentation update.
+2. Run final Release build, complete automated tests, whitespace, and status checks.
+3. Push documentation and verify GitHub Actions.
+4. Publish an immutable multi-model backend release.
+5. Update the stack to consume model `v0.6.0` and the new backend release tags.
+6. Rebuild and verify the complete released stack.
+7. Publish a new stack release only after released-component verification succeeds.
 
 ## Verification Commands
 
-Build the solution:
-
-```powershell
-dotnet build .\IndustrialVisualAnomalyDetection.slnx
-```
-
-Run all automated tests:
-
-```powershell
-dotnet test .\IndustrialVisualAnomalyDetection.slnx
-```
-
-Build and test the Release configuration:
-
 ```powershell
 dotnet build .\IndustrialVisualAnomalyDetection.slnx --configuration Release
-dotnet test .\IndustrialVisualAnomalyDetection.slnx --configuration Release --no-build
-```
 
-Verify the running local stack:
+dotnet test .\IndustrialVisualAnomalyDetection.slnx `
+    --configuration Release `
+    --no-build
 
-```powershell
-powershell.exe `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File .\scripts\verify-local-stack.ps1
-```
-
-Include a real image analysis:
-
-```powershell
-powershell.exe `
-    -NoProfile `
-    -ExecutionPolicy Bypass `
-    -File .\scripts\verify-local-stack.ps1 `
-    -ImagePath "C:\path\to\image.png"
+git diff --check
+git status --short --untracked-files=all
 ```
 
 ## Documentation Update Rule
 
-Update this document after a verified milestone or meaningful group of changes. Do not update it for every small internal edit.
-
-Do not record planned behavior as implemented. Avoid fixed automated-test counts because the suite changes frequently; record whether the complete suite passes instead.
+Update this document after a verified milestone or meaningful group of changes. Do not record planned behavior as implemented. Avoid fixed automated-test counts because the suite changes frequently; record whether the complete suite passes instead.
 
 ## Last Updated
 
-2026-08-18
+2026-08-21
